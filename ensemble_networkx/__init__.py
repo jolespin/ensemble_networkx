@@ -1,10 +1,10 @@
 # ==============
-# Hive NetworkX
+# Ensemble NetworkX
 # ==============
-# Hive plots in Python
+# Ensemble networks in Python
 # ------------------------------------
-# GitHub: https://github.com/jolespin/hive_networkx
-# PyPI: https://pypi.org/project/hive_networkx/
+# GitHub: https://github.com/jolespin/ensemble_networkx
+# PyPI: https://pypi.org/project/ensemble_networkx/
 # ------------------------------------
 # =======
 # Contact
@@ -33,7 +33,7 @@
 # =======
 # Version
 # =======
-__version__= "2020.07.02"
+__version__= "2020.07.14"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -46,7 +46,7 @@ __developmental__ = True
 __functions__ = [
     "pairwise_biweight_midcorrelation",
 ]
-__classes__ = ['EnsembleAssociationNetwork']
+__classes__ = ['EnsembleAssociationNetwork', 'SampleSpecificPerturbationNetwork']
 
 __all__ = sorted(__functions__ + __classes__)
 

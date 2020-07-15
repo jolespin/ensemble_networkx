@@ -31,7 +31,7 @@ pip install git+https://github.com/jolespin/ensemble_networkx
 import ensemble_networkx as enx
 ```
 
-Simple case of an [iris dataset](https://en.wikipedia.org/wiki/Iris_flower_data_set) ensemble network.
+#### Simple case of an [iris dataset](https://en.wikipedia.org/wiki/Iris_flower_data_set) ensemble network
 
 ```python
 # Load in data
@@ -86,5 +86,146 @@ ens.ensemble_
 # 96	0.853866	-0.796767	-0.799694	-0.669505	-0.972546	0.480086
 # 97	0.858599	-0.749676	-0.799779	-0.645614	-0.963164	0.441183
 # 98	0.856120	-0.845143	-0.811837	-0.698145	-0.981585	0.532996
-# 99	0.860316	-0.782562	-0.797666	-0.651384	-0.970254	0.458598```
-![complex](https://i.imgur.com/3P7l5Bsl.png)
+# 99	0.860316	-0.782562	-0.797666	-0.651384	-0.970254	0.458598
+
+```
+
+#### Simple case of creating sample-specific perturbation networks
+
+
+```python
+# Create ensemble network
+sspn_rho = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+sspn_rho.fit(X=X, y=y, metric="rho", reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], copy_ensemble=True)
+
+print(sspn_rho)
+# ============================================================================
+# SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: rho)
+# ============================================================================
+#     * Number of nodes (leaf measurement): 4
+#     * Number of edges (association): 6
+#     * Observation type: specimen
+#     ------------------------------------------------------------------------
+#     | Parameters
+#     ------------------------------------------------------------------------
+#     * n_iter: 100
+#     * sampling_size: 30
+#     * random_state: 0
+#     * with_replacement: False
+#     * transformation: None
+#     * memory: 518.875 KB
+#     ------------------------------------------------------------------------
+#     | Data
+#     ------------------------------------------------------------------------
+#     * Features (n=150, m=4, memory=10.859 KB)
+#     ------------------------------------------------------------------------
+#     | Intermediate
+#     ------------------------------------------------------------------------
+#     * Reference Ensemble (memory=208 B)
+#     * Sample-specific Ensembles (memory=20.312 KB)
+#     ------------------------------------------------------------------------
+#     | Terminal
+#     ------------------------------------------------------------------------
+#     * Ensemble (memory=468.750 KB)
+#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+# View ensemble
+print(*repr(sspn_rho.ensemble_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+
+# View statistics
+print(*repr(sspn_rho.stats_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+# View SSPN for a particular sample
+graph = sspn_rho.to_networkx("iris_50")
+list(graph.edges(data=True))[0]
+# ('sepal_width',
+#  'sepal_length',
+#  {'mean': 0.04004398613232575,
+#   'var': 0.0011399047127054046,
+#   'normaltest|stat': 6.063925790957182,
+#   'normaltest|p_value': 0.04822089259665142})
+
+```
+
+#### Create a SSPN using a custom association function
+
+```python
+# Custom association function
+def inverse_kullbackleibler(a,b, base=2):
+    return 1/stats.entropy(pk=a, qk=b, base=base)
+
+# Create ensemble network
+sspn_kl = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+sspn_kl.fit(X=X, y=y, metric=inverse_kullbackleibler, reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], function_is_pairwise=False, copy_ensemble=True)
+
+print(sspn_kl)
+# ================================================================================================
+# SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: inverse_kullbackleibler)
+# ================================================================================================
+#     * Number of nodes (leaf measurement): 4
+#     * Number of edges (association): 6
+#     * Observation type: specimen
+#     --------------------------------------------------------------------------------------------
+#     | Parameters
+#     --------------------------------------------------------------------------------------------
+#     * n_iter: 100
+#     * sampling_size: 30
+#     * random_state: 0
+#     * with_replacement: False
+#     * transformation: None
+#     * memory: 518.875 KB
+#     --------------------------------------------------------------------------------------------
+#     | Data
+#     --------------------------------------------------------------------------------------------
+#     * Features (n=150, m=4, memory=10.859 KB)
+#     --------------------------------------------------------------------------------------------
+#     | Intermediate
+#     --------------------------------------------------------------------------------------------
+#     * Reference Ensemble (memory=208 B)
+#     * Sample-specific Ensembles (memory=20.312 KB)
+#     --------------------------------------------------------------------------------------------
+#     | Terminal
+#     --------------------------------------------------------------------------------------------
+#     * Ensemble (memory=468.750 KB)
+#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
+
+# View ensemble
+print(*repr(sspn_kl.ensemble_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 9
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+
+# View statistics
+print(*repr(sspn_kl.stats_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+# View SSPN for a particular sample
+graph = sspn_kl.to_networkx("iris_50")
+list(graph.edges(data=True))[0]
+# ('sepal_width',
+#  'sepal_length',
+#  {'mean': -130.40664983969182,
+#   'var': 2083.5807070609085,
+#   'normaltest|stat': 15.2616635290025,
+#   'normaltest|p_value': 0.00048525707083011354})
+```
