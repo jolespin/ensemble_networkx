@@ -123,56 +123,55 @@ def pairwise_biweight_midcorrelation(X, use_numba=False):
 class EnsembleAssociationNetwork(object):
     """
     # Load in data
-    X = sy.io.get_iris_data(["X"])
+    import soothsayer_utils as syu
+    X = syu.get_iris_data(["X"])
+
     # Create ensemble network
-    ens = EnsembleAssociationNetwork(name="Iris", node_type="leaf measurement", edge_type="rho", observation_type="specimen")
-    ens.fit(X, n_iter=100)
-    # ===========================================================
-    # EnsembleAssociationNetwork(Name:Iris, Metric: pairwise_rho)
-    # ===========================================================
+    ens = enx.EnsembleAssociationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+    ens.fit(X=X, metric="spearman",  n_iter=100, stats_summary=[np.mean,np.var, stats.kurtosis, stats.skew], stats_tests=[stats.normaltest], copy_ensemble=True)
+    print(ens)
+    # =======================================================
+    # EnsembleAssociationNetwork(Name:Iris, Metric: spearman)
+    # =======================================================
     #     * Number of nodes (leaf measurement): 4
-    #     * Number of edges (rho): 6
+    #     * Number of edges (association): 6
     #     * Observation type: specimen
-    #     -------------------------------------------------------
+    #     ---------------------------------------------------
     #     | Parameters
-    #     -------------------------------------------------------
+    #     ---------------------------------------------------
     #     * n_iter: 100
     #     * sampling_size: 92
     #     * random_state: 0
-    #     * memory: 11.047 KB
-    #     -------------------------------------------------------
+    #     * with_replacement: False
+    #     * transformation: None
+    #     * memory: 16.156 KB
+    #     ---------------------------------------------------
     #     | Data
-    #     -------------------------------------------------------
-    #     * Features (n=150, m=4, memory=5.859 KB)
+    #     ---------------------------------------------------
+    #     * Features (n=150, m=4, memory=10.859 KB)
     #     * Ensemble (memory=4.812 KB)
-    #     * Statistics (['mean', 'median', 'var', 'kurtosis', 'skew', 'normaltest|stat', 'normaltest|p_value'], memory=384 B)
+    #     * Statistics (['mean', 'var', 'kurtosis', 'skew', 'normaltest|stat', 'normaltest|p_value'], memory=496 B)
 
-    # View summary stats
-    ens.stats_
-    # Statistics	mean	median	var	kurtosis	skew	normaltest|stat	normaltest|p_value
-    # Edges							
-    # (sepal_length, sepal_width)	0.855421	0.854771	0.000066	0.363698	0.151548	1.472627	0.478876
-    # (sepal_length, petal_length)	-0.801119	-0.799696	0.000445	-0.039800	-0.169622	0.590829	0.744223
-    # (sepal_length, petal_width)	-0.803683	-0.804366	0.000045	-0.814222	-0.103616	6.422311	0.040310
-    # (sepal_width, petal_length)	-0.672675	-0.671192	0.000423	0.065722	-0.447298	3.719766	0.155691
-    # (petal_width, sepal_width)	-0.973008	-0.972823	0.000014	0.386471	-0.204413	1.898091	0.387110
-    # (petal_width, petal_length)	0.487433	0.484487	0.000692	0.124931	0.517601	4.929038	0.085050
+    # View ensemble
+    print(ens.ensemble_.head())
+    # Edges       (sepal_width, sepal_length)  (sepal_length, petal_length)  \
+    # Iterations                                                              
+    # 0                             -0.113835                      0.880407   
+    # 1                             -0.243982                      0.883397   
+    # 2                             -0.108511                      0.868627   
+    # 3                             -0.151437                      0.879405   
+    # 4                             -0.241807                      0.869027  
 
-    # View ensemble network
-    ens.ensemble_
-    # Edges	(sepal_length, sepal_width)	(sepal_length, petal_length)	(sepal_length, petal_width)	(sepal_width, petal_length)	(petal_width, sepal_width)	(petal_width, petal_length)
-    # n_iter=100						
-    # 0	0.849206	-0.793988	-0.799695	-0.672147	-0.971270	0.481301
-    # 1	0.855512	-0.828456	-0.805577	-0.687045	-0.978446	0.511237
-    # 2	0.868281	-0.778928	-0.804862	-0.654763	-0.968321	0.459651
-    # 3	0.859762	-0.812899	-0.808884	-0.682954	-0.974394	0.499853
-    # 4	0.858101	-0.786517	-0.803897	-0.667418	-0.969415	0.473680
-    # ...	...	...	...	...	...	...
-    # 95	0.856910	-0.815229	-0.816463	-0.701705	-0.973710	0.519174
-    # 96	0.853866	-0.796767	-0.799694	-0.669505	-0.972546	0.480086
-    # 97	0.858599	-0.749676	-0.799779	-0.645614	-0.963164	0.441183
-    # 98	0.856120	-0.845143	-0.811837	-0.698145	-0.981585	0.532996
-    # 99	0.860316	-0.782562	-0.797666	-0.651384	-0.970254	0.458598
+    # View statistics
+    print(ens.stats_.head())
+    # Statistics                        mean       var  kurtosis      skew  \
+    # Edges                                                                  
+    # (sepal_width, sepal_length)  -0.167746  0.002831  0.191176  0.287166   
+    # (sepal_length, petal_length)  0.880692  0.000268 -0.107437  0.235619   
+    # (petal_width, sepal_length)   0.834140  0.000442 -0.275487 -0.219778   
+    # (sepal_width, petal_length)  -0.304403  0.003472 -0.363377  0.059179   
+    # (sepal_width, petal_width)   -0.285237  0.003466 -0.606118  0.264103 
+
     __future__: 
         * Add ability to load in previous data.  However, this is tricky because one needs to validate that the following objects are the same: 
             - X
@@ -555,69 +554,77 @@ class EnsembleAssociationNetwork(object):
 # Sample-specific Perturbation Networks
 class SampleSpecificPerturbationNetwork(object):
     """
-    # Get data
+    # Load in data
     import soothsayer_utils as syu
     X, y, colors = syu.get_iris_data(["X","y", "colors"])
     reference = "setosa"
-    # Create SSPN
-    sspn = SampleSpecificPerturbationNetwork(name="Iris")
-    sspn.fit(X,y,reference, n_iter=1000)
-    # Computing associations (setosa): 100%|██████████| 1000/1000 [00:00<00:00, 1366.95 draws/s]
-    # Computing sample-specific perturbation networks: 100 samples [01:08,  1.46 samples/s]
+    
+    # Create ensemble network
+    sspn_rho = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+    sspn_rho.fit(X=X, y=y, metric="rho", reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], copy_ensemble=True)
 
-    sspn
-    # =====================================================================================
-    # SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: pairwise_rho)
-    # =====================================================================================
-    #     * Number of nodes (None): 4
-    #     * Number of edges (None): 6
-    #     * Observation type: None
-    #     ---------------------------------------------------------------------------------
+    print(sspn_rho)
+    # ============================================================================
+    # SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: rho)
+    # ============================================================================
+    #     * Number of nodes (leaf measurement): 4
+    #     * Number of edges (association): 6
+    #     * Observation type: specimen
+    #     ------------------------------------------------------------------------
     #     | Parameters
-    #     ---------------------------------------------------------------------------------
-    #     * n_iter: 1000
+    #     ------------------------------------------------------------------------
+    #     * n_iter: 100
     #     * sampling_size: 30
     #     * random_state: 0
-    #     * memory: 43.672 KB
-    #     ---------------------------------------------------------------------------------
+    #     * with_replacement: False
+    #     * transformation: None
+    #     * memory: 518.875 KB
+    #     ------------------------------------------------------------------------
     #     | Data
-    #     ---------------------------------------------------------------------------------
+    #     ------------------------------------------------------------------------
     #     * Features (n=150, m=4, memory=10.859 KB)
-    #     * Statistics (['mean', 'median', 'var', 'kurtosis', 'skew', 'normaltest|stat', 'normaltest|p_value'], memory=32.812 KB)
-    
-    # Get SSPN
-    sspn.stats_.sel(Statistics="mean").to_pandas()
-    # Edges	(sepal_width, sepal_length)	(sepal_length, petal_length)	(petal_width, sepal_length)	(sepal_width, petal_length)	(petal_width, sepal_width)	(petal_width, petal_length)
-    # Samples						
-    # iris_100	0.127281	-0.646881	-0.119744	-0.565109	-0.185594	0.457830
-    # iris_101	0.090062	-0.622146	-0.095830	-0.582579	-0.189793	0.447629
-    # iris_102	0.053159	-0.596144	-0.076951	-0.592005	-0.194104	0.443015
-    # iris_103	0.080395	-0.642868	-0.093303	-0.618016	-0.183654	0.448550
-    # iris_104	0.090275	-0.630976	-0.096987	-0.588645	-0.193117	0.455613
-    # ...	...	...	...	...	...	...
-    # iris_95	0.087047	-0.510475	-0.079858	-0.495492	-0.139211	0.336770
-    # iris_96	0.083525	-0.506814	-0.078997	-0.495323	-0.149577	0.349434
-    # iris_97	0.050871	-0.469799	-0.061969	-0.497563	-0.153025	0.340282
-    # iris_98	0.056155	-0.324093	-0.049098	-0.346397	-0.141890	0.274081
-    # iris_99	0.073023	-0.489976	-0.072948	-0.490904	-0.153607	0.348242
-
-    sspn.stats_
-    # xarray.DataArray'Iris'Samples: 100Edges: 6Statistics: 7
-    # 0.1273 0.1238 0.00184 0.07746 0.4722 ... 0.2709 0.6676 65.84 5.044e-15
+    #     ------------------------------------------------------------------------
+    #     | Intermediate
+    #     ------------------------------------------------------------------------
+    #     * Reference Ensemble (memory=208 B)
+    #     * Sample-specific Ensembles (memory=20.312 KB)
+    #     ------------------------------------------------------------------------
+    #     | Terminal
+    #     ------------------------------------------------------------------------
+    #     * Ensemble (memory=468.750 KB)
+    #     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
     # Coordinates:
-    # Samples
-    # (Samples)
-    # <U8
-    # 'iris_100' 'iris_101' ... 'iris_99'
-    # Edges
-    # (Edges)
-    # object
-    # frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
-    # Statistics
-    # (Statistics)
-    # <U18
-    # 'mean' ... 'normaltest|p_value'
-    # Attributes: (0)
+    #   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+    #   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+    #   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+    # Coordinates:
+    #   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+    #   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+    #   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+    # View ensemble
+    print(*repr(sspn_rho.ensemble_).split("\n")[-4:], sep="\n")
+    # Coordinates:
+    #   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+    #   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+    #   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+
+    # View statistics
+    print(*repr(sspn_rho.stats_).split("\n")[-4:], sep="\n")
+    # Coordinates:
+    #   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+    #   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+    #   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+    # View SSPN for a particular sample
+    graph = sspn_rho.to_networkx("iris_50")
+    list(graph.edges(data=True))[0]
+    # ('sepal_width',
+    #  'sepal_length',
+    #  {'mean': 0.04004398613232575,
+    #   'var': 0.0011399047127054046,
+    #   'normaltest|stat': 6.063925790957182,
+    #   'normaltest|p_value': 0.04822089259665142})
     """
     def __init__(
         self, 
