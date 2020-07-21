@@ -893,6 +893,8 @@ class SampleSpecificPerturbationNetwork(object):
         self.index_reference_ = pd.Index(index_reference, name="Reference={}".format(reference))
         self.index_samplespecific_ = pd.Index(index_samplespecific, name="Sample-specific")
 
+        return self
+
     # I/O
     # ===
     def to_file(self, path, compression='infer', **kwargs):
