@@ -1,1 +1,2 @@
+* 2020 07.24 - Added `DifferentialEnsembleAssociationNetwork`
 * 2020.07.21 - `SampleSpecificPerturbationNetwork` fit method returns self

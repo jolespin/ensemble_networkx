@@ -33,7 +33,7 @@
 # =======
 # Version
 # =======
-__version__= "2020.07.21"
+__version__= "2020.08.24"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -46,7 +46,7 @@ __developmental__ = True
 __functions__ = [
     "pairwise_biweight_midcorrelation",
 ]
-__classes__ = ['EnsembleAssociationNetwork', 'SampleSpecificPerturbationNetwork']
+__classes__ = ['EnsembleAssociationNetwork', 'SampleSpecificPerturbationNetwork', 'DifferentialEnsembleAssociationNetwork']
 
 __all__ = sorted(__functions__ + __classes__)
 

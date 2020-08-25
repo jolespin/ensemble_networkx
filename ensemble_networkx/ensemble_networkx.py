@@ -998,3 +998,365 @@ class SampleSpecificPerturbationNetwork(object):
                 pad*" " + "* Observation type: {}".format(self.observation_type),
                 ]
             return "\n".join(fields)
+
+# Differential Ensemble Association Network
+class DifferentialEnsembleAssociationNetwork(object):
+    def __init__(
+        self, 
+        name=None,
+        node_type=None,
+        edge_type=None,
+        observation_type=None,
+        reference_type=None,
+        treatment_type=None,
+        assert_symmetry=True,
+        assert_nan_safe_functions=True,
+        nans_ok=True,
+        tol=1e-10,
+        ):
+        self.name = name
+        self.node_type = node_type
+        self.edge_type = edge_type
+        self.observation_type = observation_type
+        self.reference_type = reference_type
+        self.treatment_type = treatment_type
+        self.assert_symmetry = assert_symmetry
+        self.assert_nan_safe_functions = assert_nan_safe_functions
+        self.nans_ok = nans_ok
+        self.tol = tol
+        
+    def fit(
+        self,
+        X:pd.DataFrame,
+        y:pd.Series,
+        reference,
+        treatment,
+        metric="rho",
+        n_iter=1000,
+        sampling_size=0.6180339887,
+        transformation=None,
+        random_state=0,
+        with_replacement=False,
+        function_is_pairwise=True,
+        stats_comparative = [stats.wasserstein_distance],
+        stats_tests_comparative = None,
+        stats_summary_initial=[np.mean, np.var, stats.kurtosis, stats.skew],
+        stats_tests_initial=[stats.normaltest],
+        stats_differential=[np.mean],
+        copy_X=True,
+        copy_y=True,
+        copy_ensemble_reference=True, # This will get very big very quickly
+        copy_ensemble_treatment=True, # This will get very big very quickly
+#         ensemble_reference=None, OPTION TO INCLUDE A PREVIOUS FITTED ENSEMBLE NETWORK FOR EITHER REFERENCE OR TREATMENT
+#         ensemble_treatment=None, THIS WILL BE USEFUL FOR RUNNING MULTIPLE DIN AGAINST SAME REFERENCE NETWORK
+
+        ):
+        if stats_comparative is None:
+            stats_comparative = []
+        if stats_tests_comparative is None:
+            stats_tests_comparative = []
+        assert stats_summary_initial is not None, "`stats_summary_initial` cannot be None.  Recommended using either np.mean or np.median"
+        if stats_differential is None:
+            stats_differential = True
+        if stats_differential is True:
+            stats_differential = stats_summary_initial
+        if hasattr(stats_differential, "__call__"):
+            stats_differential = [stats_differential] # Make it string compatible here.  It's tricky because need to check if its in `stats_summary_initial`
+        assert set(stats_differential) <= set(stats_summary_initial), "Please include at least one stat from `stats_summary_initial` such as `np.mean` or `np.median`"
+
+        # Memory
+        self.memory_ = 0
+        
+        assert reference in y.unique(), "`reference({}, type:{}) not in `y`".format(reference, type(reference))
+        assert treatment in y.unique(), "`treatment({}, type:{}) not in `y`".format(treatment, type(treatment))
+
+        assert set(X.index) == set(y.index), "`X.index` must have same keys as `y.index`"
+        y = y[X.index]
+ 
+        # Ensemble Reference 
+        index_reference = sorted(y[lambda i: i == reference].index)
+        ensemble_reference = EnsembleAssociationNetwork(
+                name=reference, 
+                node_type=self.node_type, 
+                edge_type=self.edge_type, 
+                observation_type=self.observation_type, 
+                assert_symmetry=self.assert_symmetry, 
+                assert_nan_safe_functions=self.assert_nan_safe_functions,
+                nans_ok=self.nans_ok,
+                tol=self.tol,
+        )
+        # Fit
+        ensemble_reference.fit(
+                X=X.loc[index_reference],
+                metric=metric,
+                n_iter=n_iter,
+                sampling_size=sampling_size,
+                transformation=transformation,
+                random_state=random_state,
+                with_replacement=with_replacement,
+                function_is_pairwise=function_is_pairwise,
+                stats_summary=stats_summary_initial,
+                stats_tests=stats_tests_initial,
+                copy_X=False,
+                copy_ensemble=True,
+        )
+
+        # Treatment samples
+        index_treatment = y[lambda i: i != treatment].index #sorted(set(X.index) - set(index_reference))
+        ensemble_treatment = EnsembleAssociationNetwork(
+                name=treatment, 
+                node_type=self.node_type, 
+                edge_type=self.edge_type, 
+                observation_type=self.observation_type, 
+                assert_symmetry=self.assert_symmetry, 
+                assert_nan_safe_functions=self.assert_nan_safe_functions,
+                nans_ok=self.nans_ok,
+                tol=self.tol,
+        )
+        # Fit
+        ensemble_treatment.fit(
+                X=X.loc[index_treatment],
+                metric=metric,
+                n_iter=n_iter,
+                sampling_size=sampling_size,
+                transformation=transformation,
+                random_state=random_state,
+                with_replacement=with_replacement,
+                function_is_pairwise=function_is_pairwise,
+                stats_summary=stats_summary_initial,
+                stats_tests=stats_tests_initial,
+                copy_X=False,
+                copy_ensemble=True,
+        )
+        assert np.all(ensemble_reference.ensemble_.columns == ensemble_treatment.ensemble_.columns), "Edges must match between `ensemble_reference_` and `ensemble_treatment_`"
+        # Data
+        n, m = X.shape
+
+        # Network
+        nodes = ensemble_reference.nodes_
+        number_of_nodes = ensemble_reference.number_of_nodes_
+        edges = ensemble_reference.edges_
+        number_of_edges = ensemble_reference.number_of_edges_
+
+        # Statistics
+        number_of_statistic_fields = 0
+
+        stat_fields = list()
+        if stats_comparative:# is not None:
+            for func in stats_comparative:  
+                stat_name = func.__name__
+                stat_fields.append(stat_name)
+        if stats_tests_comparative:# is not None:
+            for func in stats_tests_comparative:
+                stat_name = func.__name__
+                stat_fields.append("{}|stat".format(stat_name))
+                stat_fields.append("{}|p_value".format(stat_name))
+
+        self.stats_comparative_ = np.empty((number_of_edges, len(stat_fields)))
+        self.stats_comparative_[:] = np.nan 
+
+
+
+        # Comparative statistics
+        k = 0
+        if stats_comparative is not None:
+            for func in stats_comparative:  
+                for i in range(number_of_edges):
+                    u = ensemble_reference.ensemble_.values[:,i]
+                    v = ensemble_treatment.ensemble_.values[:,i]
+                    self.stats_comparative_[i,k] = func(u, v)
+                k += 1
+
+            if stats_tests_comparative:# is not None:
+                for func in stats_tests_comparative:
+                    for i in range(number_of_edges):
+                        u = ensemble_reference.ensemble_.values[:,i]
+                        v = ensemble_treatment.ensemble_.values[:,i]
+                        stat, p = func(u, v)
+                        self.stats_comparative_[i, [k, k+1]] = [stat,p]
+                    k += 2
+                    
+            
+       # Comparative statistics
+        self.stats_comparative_ = pd.DataFrame(
+                data=self.stats_comparative_, 
+                index=edges,
+                columns=stat_fields,
+        )
+
+        self.stats_comparative_memory_ = self.stats_comparative_.memory_usage().sum()
+        self.memory_ += self.stats_comparative_memory_ 
+
+        # Differential statistics
+        self.ensemble_ = list()
+        for func in stats_differential:
+            func_name = func
+            if hasattr(func, "__call__"):
+                func_name = func.__name__
+            distribution_reference = ensemble_reference.stats_[func_name]
+            distribution_treatment = ensemble_treatment.stats_[func_name]
+            differential = pd.Series(distribution_treatment - distribution_reference, name=func_name)
+            self.ensemble_.append(differential)
+        self.ensemble_ = pd.DataFrame(self.ensemble_).T
+        self.ensemble_memory_ = self.ensemble_.memory_usage().sum()
+        self.memory_ += self.ensemble_memory_
+        
+        # Remove ensemble_ if relevant
+        if not copy_ensemble_reference:
+            ensemble_reference.memory_ -= ensemble_reference.ensemble_memory_
+            delattr(ensemble_reference, "ensemble_")
+        if not copy_ensemble_treatment:
+            ensemble_treatment.memory_ -= ensemble_treatment.ensemble_memory_
+            delattr(ensemble_treatment, "ensemble_")
+            
+        # Data
+        if copy_X:
+            self.X_ = X.copy()
+            self.X_memory_ = X.memory_usage().sum()
+            self.memory_ += self.X_memory_ 
+
+        if copy_y:
+            self.y_ = y.copy()
+
+        # Reference ensemble
+        self.ensemble_reference_ = ensemble_reference
+        self.ensemble_reference_memory_ = ensemble_reference.memory_
+        self.memory_ += self.ensemble_reference_memory_
+        
+        # Treatment ensemble
+        self.ensemble_treatment_ = ensemble_treatment
+        self.ensemble_treatment_memory_ = ensemble_treatment.memory_
+        self.memory_ += self.ensemble_treatment_memory_
+
+        
+        # Network
+        n,m = X.shape
+        self.n_ = n
+        self.m_ = m
+        self.nodes_ = nodes
+        self.number_of_nodes_ = number_of_nodes
+        self.edges_ = edges
+        self.number_of_edges_ = number_of_edges
+        
+        # Get metric
+        self.metric_ = ensemble_reference.metric_
+        self.metric_name = ensemble_reference.metric_name
+
+        # Store parameters and data
+        self.reference_ = reference
+        self.treatment_ = treatment
+
+        self.n_iter = n_iter
+        self.sampling_size_ = ensemble_reference.sampling_size_
+        self.transformation_ = ensemble_reference.transformation_
+        self.random_state = random_state
+        self.with_replacement = ensemble_reference.with_replacement
+
+        self.index_reference_ = pd.Index(index_reference, name="Reference={}".format(reference))
+        self.index_treatment_ = pd.Index(index_treatment, name="Treatment={}".format(treatment))
+
+        return self
+    
+    
+        # I/O
+    # ===
+    def to_file(self, path, compression='infer', **kwargs):
+        write_object(self, path=path, compression=compression, **kwargs)
+        
+    # Convert
+    # =======
+    def to_condensed(self, weight="mean", into=Symmetric):
+        if not hasattr(self, "ensemble_"):
+            raise Exception("Please fit model")
+        assert weight in self.ensemble_.columns
+        assert into in {Symmetric, pd.Series}
+        sym_network = Symmetric(
+            data=self.ensemble_[weight], 
+            name=self.name, 
+            node_type=self.node_type, 
+            edge_type=self.edge_type, 
+            func_metric=self.metric_, 
+            association="network", 
+            assert_symmetry=self.assert_symmetry, 
+            nans_ok=self.nans_ok, 
+            tol=self.tol,
+        )
+        if into == Symmetric:
+            return sym_network
+        if into == pd.Series:
+            return sym_network.weights
+        
+    def to_dense(self, weight="mean", fill_diagonal=1):
+        df_dense = self.to_condensed(weight=weight).to_dense(index=self.nodes_)
+        if fill_diagonal is not None:
+            np.fill_diagonal(df_dense.values, fill_diagonal)
+        return df_dense
+
+    def to_networkx(self, into=None, **attrs):
+        if into is None:
+            into = nx.Graph
+        if not hasattr(self, "ensemble_"):
+            raise Exception("Please fit model")
+
+        metadata = { "node_type":self.node_type, "edge_type":self.edge_type, "observation_type":self.observation_type, "metric":self.metric_name}
+        metadata.update(attrs)
+        graph = into(name=self.name, **metadata)
+        for (node_A, node_B), statistics in pv(self.ensemble_.iterrows(), description="Building NetworkX graph from statistics", total=self.number_of_edges_, unit=" edges"):
+            graph.add_edge(node_A, node_B, **statistics)
+        return graph 
+
+    def copy(self):
+        return copy.deepcopy(self)
+    
+    # Built-in
+    # ========
+    def __repr__(self):
+        pad = 4
+        fitted = hasattr(self, "ensemble_") # Do not keep `fit_`
+        if fitted:
+            header = format_header("{}(Name:{}, Reference: {}, Treatment: {}, Metric: {})".format(type(self).__name__, self.name, self.reference_, self.treatment_, self.metric_name),line_character="=")
+            n = len(header.split("\n")[0])
+            fields = [
+                header,
+                pad*" " + "* Number of nodes ({}): {}".format(self.node_type, self.number_of_nodes_),
+                pad*" " + "* Number of edges ({}): {}".format(self.edge_type, self.number_of_edges_),
+                pad*" " + "* Observation type: {}".format(self.observation_type),
+                *map(lambda line:pad*" " + line, format_header("| Parameters", "-", n=n-pad).split("\n")),
+                pad*" " + "* n_iter: {}".format(self.n_iter),
+                pad*" " + "* sampling_size: {}".format(self.sampling_size_),
+                pad*" " + "* random_state: {}".format(self.random_state),
+                pad*" " + "* with_replacement: {}".format(self.with_replacement),
+                pad*" " + "* transformation: {}".format(self.transformation_),
+                pad*" " + "* memory: {}".format(format_memory(self.memory_)),
+                *map(lambda line:pad*" " + line, format_header("| Data", "-", n=n-pad).split("\n")),
+                ]
+            # Data
+            if hasattr(self, "X_"):
+                fields.append(pad*" " + "* Features (n={}, m={}, memory={})".format(self.n_, self.m_, format_memory(self.X_memory_)))
+            else:
+                fields.append(pad*" " + "* Features (n={}, m={})".format(self.n_, self.m_))
+            
+            # Intermediate
+            fields += list(map(lambda line:pad*" " + line, format_header("| Intermediate", "-", n=n-pad).split("\n")))
+
+            fields.append(pad*" " + "* Reference Ensemble (memory={})".format(format_memory(self.ensemble_reference_memory_)))
+            fields.append(pad*" " + "* Treatment Ensemble (memory={})".format(format_memory(self.ensemble_treatment_memory_)))
+
+            # Terminal
+            fields += list(map(lambda line:pad*" " + line, format_header("| Terminal", "-", n=n-pad).split("\n")))
+
+            fields.append(pad*" " + "* Initial Statistics ({})".format(self.ensemble_reference_.stats_.columns.tolist()))
+            fields.append(pad*" " + "* Comparative Statistics ({}, memory={})".format(self.stats_comparative_.columns.tolist(), format_memory(self.stats_comparative_memory_)))
+            fields.append(pad*" " + "* Differential Statistics ({}, memory={})".format(self.ensemble_.columns.tolist(), format_memory(self.ensemble_memory_)))
+
+            return "\n".join(fields)
+        else:
+            header = format_header("{}(Name:{})".format(type(self).__name__, self.name),line_character="=")
+            n = len(header.split("\n")[0])
+            fields = [
+                header,
+                pad*" " + "* Number of nodes ({}): {}".format(self.node_type, 0),
+                pad*" " + "* Number of edges ({}): {}".format(self.edge_type, 0),
+                pad*" " + "* Observation type: {}".format(self.observation_type),
+                ]
+            return "\n".join(fields)
