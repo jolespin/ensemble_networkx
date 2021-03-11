@@ -10,8 +10,7 @@ Compatible for Python 3.
     scipy >= 1
     networkx >= 2
     matplotlib >= 3
-    hive_networkx >= 2020.06.30
-    soothsayer_utils >= 2020.07.01
+    soothsayer_utils >= 2021.03.08
     compositional >= 2020.05.19
 
 #### Install:
@@ -224,4 +223,46 @@ list(graph.edges(data=True))[0]
 #   'var': 2083.5807070609085,
 #   'normaltest|stat': 15.2616635290025,
 #   'normaltest|p_value': 0.00048525707083011354})
+```
+
+#### Feature engineering using categories
+```python
+from soothsayer_utils import get_iris_data
+from scipy import stats
+import pandas as pd
+import ensemble_networkx as enx
+
+X, y = get_iris_data(["X","y"])
+# Usage
+CEF = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
+
+# Add categories
+category_1 = pd.Series(X.columns.map(lambda x:x.split("_")[0]), X.columns)
+CEF.add_category(
+    name_category="leaf_type", 
+    mapping=category_1,
+)
+# Optionally add scaling factors, statistical tests, and summary statistics
+# Compile all of the data
+CEF.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
+# Unpacking engineered groups: 100%|██████████| 1/1 [00:00<00:00, 2974.68it/s]
+# Organizing feature sets: 100%|██████████| 4/4 [00:00<00:00, 17403.75it/s]
+# Compiling synopsis [Basic Feature Info]: 100%|██████████| 2/2 [00:00<00:00, 32768.00it/s]
+# Compiling synopsis [Scaling Factor Info]: 100%|██████████| 2/2 [00:00<00:00, 238.84it/s]
+
+# View the engineered features
+CEF.synopsis_
+#   initial_features        number_of_features      leaf_type(level:0)      scaling_factors sum(scaling_factors)    mean(scaling_factors)   sem(scaling_factors)    std(scaling_factors)
+# leaf_type                                                         
+# sepal     [sepal_width, sepal_length]     2       sepal   [458.6, 876.5]  1335.1  667.55  208.95  208.95
+# petal     [petal_length, petal_width]     2       petal   [563.7, 179.90000000000003]     743.6   371.8   191.9   191.9
+
+# Transform a dataset using the defined categories
+CEF.fit_transform(X, aggregate_fn=np.sum)
+# leaf_type sepal   petal
+# sample            
+# iris_0    8.6     1.6
+# iris_1    7.9     1.6
+# iris_2    7.9     1.5
+# iris_3    7.7     1.7
 ```

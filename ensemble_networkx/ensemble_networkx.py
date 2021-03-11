@@ -5,9 +5,11 @@ from __future__ import print_function, division
 # Modules
 # ==============================================================================
 # Built-ins
-import os, sys, copy, warnings
+import os, sys, time, datetime, copy, warnings
+from typing import Dict, Union, Any
 from collections import defaultdict, OrderedDict
-from itertools import combinations
+from collections.abc import Mapping, Hashable
+from itertools import combinations, product
 
 # PyData
 import pandas as pd
@@ -16,20 +18,719 @@ import networkx as nx
 import xarray as xr
 from scipy import stats
 from scipy.special import comb
-from scipy.spatial.distance import squareform
-
-# Hive NetworkX
-from hive_networkx import Symmetric, signed
+from scipy.spatial.distance import squareform, pdist
 
 # Compositional
 from compositional import pairwise_rho, pairwise_phi
 
 # soothsayer_utils
-from soothsayer_utils import pv, assert_acceptable_arguments, is_symmetrical, is_graph, write_object, format_memory, format_header, format_path, is_nonstring_iterable, Suppress
+from soothsayer_utils import pv, flatten, assert_acceptable_arguments, is_symmetrical, is_graph, write_object, format_memory, format_header, format_path, is_nonstring_iterable, Suppress, dict_build, dict_filter, is_dict, is_dict_like, is_color, is_number, check_packages, is_query_class
+
 try:
     from . import __version__
 except ImportError:
     __version__ = "ImportError: attempted relative import with no known parent package"
+
+# ===================s
+# Transformations
+# ===================
+# Unsigned network to signed network
+def signed(X):
+    """
+    unsigned -> signed correlation
+    """
+    return (X + 1)/2
+
+# ===================
+# Converting Networks
+# ===================
+# pd.DataFrame 2D to pd.Series
+def dense_to_condensed(X, name=None, assert_symmetry=True, tol=None):
+    if assert_symmetry:
+        assert is_symmetrical(X, tol=tol), "`X` is not symmetric with tol=`{}`".format(tol)
+    labels = X.index
+    index=pd.Index(list(map(frozenset, combinations(labels, 2))), name=name)
+    data = squareform(X, checks=False)
+    return pd.Series(data, index=index, name=name)
+
+# pd.Series to pd.DataFrame 2D
+def condensed_to_dense(y:pd.Series, fill_diagonal=np.nan, index=None):
+    # Need to optimize this
+    data = defaultdict(dict)
+    for edge, w in y.iteritems():
+        node_a, node_b = tuple(edge)
+        data[node_a][node_b] = data[node_b][node_a] = w
+        
+    if is_dict_like(fill_diagonal):
+        for node in data:
+            data[node][node] = fill_diagonal[node]
+    else:
+        for node in data:
+            data[node][node] = fill_diagonal
+            
+    df_dense = pd.DataFrame(data)
+    if index is None:
+        index = df_dense.index
+    return df_dense.loc[index,index]
+
+# Convert networks
+def convert_network(data, into, index=None, assert_symmetry=True, tol=1e-10, **attrs):
+    """
+    Convert to and from the following network structures:
+        * pd.DataFrame (must be symmetrical)
+        * pd.Series (index must be frozenset of {node_a, node_b})
+        * Symmetric
+        * nx.[Di|Ordered]Graph
+    """
+    assert isinstance(data, (pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)), "`data` must be {pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
+
+    assert into in (pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph), "`into` must be {pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
+    assert into not in {nx.MultiGraph, nx.MultiDiGraph},  "`into` cannot be a `Multi[Di]Graph`"
+    
+    # self -> self
+    if isinstance(data, into):
+        return data.copy()
+    
+    if isinstance(data, pd.Series):
+        data =  Symmetric(data, **attrs)
+        if into == Symmetric:
+            return data
+    
+    # pd.DataFrame -> Symmetric or Graph
+    if isinstance(data, pd.DataFrame) and (into in {Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}):
+        weights = dense_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol)
+        if into == Symmetric:
+            return Symmetric(weights, **attrs)
+        else:
+            return Symmetric(weights).to_networkx(into=into, **attrs)
+        
+    # pd.DataFrame -> pd.Series
+    if isinstance(data, pd.DataFrame) and (into in {pd.Series}):
+        return dense_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol)
+
+        
+    # Symmetric -> pd.DataFrame, pd.Series, or Graph
+    if isinstance(data, Symmetric):
+        # pd.DataFrame
+        if into == pd.DataFrame:
+            df = data.to_dense()
+            if index is None:
+                return df
+            else:
+                assert set(index) <= set(df.index), "Not all `index` values are in `data`"
+                return df.loc[index,index]
+        elif into == pd.Series:
+            return data.weights.copy()
+        # Graph
+        else:
+            return data.to_networkx(into=into, **attrs)
+        
+    # Graph -> Symmetric
+    if isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)):
+        if into == Symmetric:
+            return Symmetric(data=data, **attrs)
+        if into == pd.DataFrame:
+            return Symmetric(data=data, **attrs).to_dense()
+        if into in {nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}:
+            return Symmetric(data=data).to_networkx(into=into, **attrs)
+        
+        if into == pd.Series:
+            return convert_network(data=data, into=Symmetric, index=index, assert_symmetry=assert_symmetry, tol=tol).weights
+
+
+# ===================
+# Network Statistics
+# ===================
+# Connectivity
+def connectivity(data, groups:pd.Series=None, include_self_loops=False, tol=1e-10):
+    """
+    Calculate connectivity from pd.DataFrame (must be symmetric), Symmetric, Hive, or NetworkX graph
+    
+    groups must be dict-like: {node:group}
+    """
+    # This is a hack to allow Hives from hive_networkx
+    if is_query_class(data, "Hive"):
+        data = condensed_to_dense(data.weights)
+    assert isinstance(data, (pd.DataFrame, Symmetric, nx.Graph, nx.DiGraph, nx.OrderedGraph, nx.OrderedDiGraph)), "Must be either a symmetric pd.DataFrame, Symmetric, nx.Graph, or hx.Hive object"
+    if is_graph(data):
+        weights = dict()
+        for edge_data in data.edges(data=True):
+            edge = frozenset(edge_data[:-1])
+            weight = edge_data[-1]["weight"]
+            weights[edge] = weight
+        weights = pd.Series(weights, name="Weights")#.sort_index()
+        data = Symmetric(weights)
+    if isinstance(data, Symmetric):
+        df_dense = condensed_to_dense(data.weights)
+
+    if isinstance(data, pd.DataFrame):
+        assert is_symmetrical(data, tol=tol)
+        df_dense = data
+        
+
+    df_dense = df_dense.copy()
+    if not include_self_loops:
+        np.fill_diagonal(df_dense.values, 0)
+
+    #kTotal
+    k_total = df_dense.sum(axis=1)
+    
+    if groups is None:
+        return k_total
+    else:
+        groups = pd.Series(groups)
+        data_connectivity = OrderedDict()
+        
+        data_connectivity["kTotal"] = k_total
+        
+        #kWithin
+        k_within = list()
+        for group in groups.unique():
+            idx_nodes = groups[lambda x: x == group].index & df_dense.index
+            k_group = df_dense.loc[idx_nodes,idx_nodes].sum(axis=1)
+            k_within.append(k_group)
+        data_connectivity["kWithin"] = pd.concat(k_within)
+        
+        #kOut
+        data_connectivity["kOut"] = data_connectivity["kTotal"] - data_connectivity["kWithin"]
+
+        #kDiff
+        data_connectivity["kDiff"] = data_connectivity["kWithin"] - data_connectivity["kOut"]
+
+        return pd.DataFrame(data_connectivity)
+
+def density(k:pd.Series):
+    """
+    Density = sum(khelp)/(nGenes * (nGenes - 1))
+    https://github.com/cran/WGCNA/blob/15de0a1fe2b214f7047b887e6f8ccbb1c681e39e/R/Functions.R#L1963
+    """
+    k_total = k.sum()
+    number_of_nodes = k.size
+    return k_total/(number_of_nodes * (number_of_nodes - 1))
+
+def centralization(k:pd.Series):
+    """
+    Centralization = nGenes*(max(khelp)-mean(khelp))/((nGenes-1)*(nGenes-2))
+    https://github.com/cran/WGCNA/blob/15de0a1fe2b214f7047b887e6f8ccbb1c681e39e/R/Functions.R#L1965
+    """
+    k_max = k.max()
+    k_mean = k.mean()
+    number_of_nodes = k.size
+    return number_of_nodes * (k_max - k_mean)/((number_of_nodes - 1) * (number_of_nodes - 2))
+
+def heterogeneity(k:pd.Series):
+    """
+    Heterogeneity = sqrt(nGenes * sum(khelp^2)/sum(khelp)^2 - 1)
+    https://github.com/cran/WGCNA/blob/15de0a1fe2b214f7047b887e6f8ccbb1c681e39e/R/Functions.R#L1967
+    """
+    number_of_nodes = k.size
+    return np.sqrt(number_of_nodes * np.sum(k**2)/np.sum(k)**2 - 1)
+
+# Topological overlap
+def topological_overlap_measure(data, into=None, node_type=None, edge_type="topological_overlap_measure", association="network", assert_symmetry=True, tol=1e-10):
+    """
+    Compute the topological overlap for a weighted adjacency matrix
+    
+    `data` and `into` can be the following network structures/objects:
+        * pd.DataFrame (must be symmetrical)
+        * Symmetric
+        * nx.[Di|Ordered]Graph
+    ====================================================
+    Benchmark 5000 nodes (iris w/ 4996 noise variables):
+    ====================================================
+    TOM via rpy2 -> R -> WGCNA: 24 s ± 471 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+    TOM via this function: 7.36 s ± 212 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+
+    =================
+    Acknowledgements:
+    =================
+    Original source:
+        * Peter Langfelder and Steve Horvath
+        https://www.rdocumentation.org/packages/WGCNA/versions/1.67/topics/TOMsimilarity
+        https://bmcbioinformatics.biomedcentral.com/articles/10.1186/1471-2105-9-559
+
+    Implementation adapted from the following sources:
+        * Credits to @scleronomic
+        https://stackoverflow.com/questions/56574729/how-to-compute-the-topological-overlap-measure-tom-for-a-weighted-adjacency-ma/56670900#56670900
+        * Credits to @benmaier
+        https://github.com/benmaier/GTOM/issues/3
+    """
+    # Compute topological overlap
+    def _compute_tom(A):
+        # Prepare adjacency
+        np.fill_diagonal(A, 0)
+        # Prepare TOM
+        A_tom = np.zeros_like(A)
+        # Compute TOM
+        L = np.matmul(A,A)
+        ki = A.sum(axis=1)
+        kj = A.sum(axis=0)
+        MINK = np.array([ np.minimum(ki_,kj) for ki_ in ki ])
+        A_tom = (L+A) / (MINK + 1 - A)
+        np.fill_diagonal(A_tom,1)
+        return A_tom
+
+    # Check input type
+    if into is None:
+        into = type(data)
+        
+    node_labels = None
+    if not isinstance(data, np.ndarray):
+        if not isinstance(data, pd.DataFrame):
+            data = convert_network(data, into=pd.DataFrame)
+        assert np.all(data.index == data.columns), "`data` index and columns must have identical ordering"
+        np.fill_diagonal(data.values,0) #! redundant
+        node_labels = data.index
+
+    # Check input type
+    if assert_symmetry:
+        assert is_symmetrical(data, tol=tol), "`data` is not symmetric"
+    assert np.all(data >= 0), "`data` weights must ≥ 0"
+
+    # Compute TOM
+    A_tom = _compute_tom(np.asarray(data))
+    if assert_symmetry:
+        A_tom = (A_tom + A_tom.T)/2
+
+    # Unlabeled adjacency
+    if node_labels is None:
+        return A_tom
+
+    # Labeled adjacency
+    else:
+        df_tom = pd.DataFrame(A_tom, index=node_labels, columns=node_labels)
+        df_tom.index.name = df_tom.columns.name = node_type
+        return convert_network(df_tom, into=into, assert_symmetry=assert_symmetry, tol=tol, adjacency="network", node_type=node_type, edge_type=edge_type, association=association)
+
+
+
+
+# =======================================================
+# Modularity
+# =======================================================
+# Cluster modularity matrix
+def cluster_modularity(df:pd.DataFrame, node_type="node", iteration_type="iteration"):
+    """
+
+    n_louvain = 100
+
+    louvain = dict()
+    for rs in tqdm(range(n_louvain), "Louvain"):
+        louvain[rs] = community.best_partition(graph_unsigned, random_state=rs)
+    df = pd.DataFrame(louvain)
+
+    # df.head()
+    # 	0	1	2	3	4	5	6	7	8	9
+    # a	0	0	0	0	0	0	0	0	0	0
+    # b	1	1	1	1	1	1	1	1	1	1
+    # c	2	2	2	2	2	2	2	2	2	2
+    # d	3	3	3	3	3	3	3	3	3	3
+    # e	4	1	1	4	1	4	4	1	4	1
+
+    cluster_modularity(df).head()
+    iteration  0  1  2  3  4  5  6  7  8  9
+    node
+    (b, a)     0  0  0  0  0  0  0  0  0  0
+    (c, a)     0  0  0  0  0  0  0  0  0  0
+    (d, a)     0  0  0  0  0  0  0  0  0  0
+    (e, a)     0  0  0  0  0  0  0  0  0  0
+    (a, f)     0  0  0  0  0  0  0  0  0  0
+    """
+
+    # Adapted from @code-different:
+    # https://stackoverflow.com/questions/58566957/how-to-transform-a-dataframe-of-cluster-class-group-labels-into-a-pairwise-dataf
+
+
+    # `x` is a table of (n=nodes, p=iterations)
+    nodes = df.index
+    iterations = df.columns
+    x = df.values
+    n,p = x.shape
+
+    # `y` is an array of n tables, each having 1 row and p columns
+    y = x[:, None]
+
+    # Using numpy broadcasting, `z` contains the result of comparing each
+    # table in `y` against `x`. So the shape of `z` is (n x n x p)
+    z = x == y
+
+    # Reshaping `z` by merging the first two dimensions
+    data = z.reshape((z.shape[0] * z.shape[1], z.shape[2]))
+
+    # Redundant pairs
+    redundant_pairs = list(map(lambda node:frozenset([node]), nodes))
+
+    # Create pairwise clustering matrix
+    df_pairs = pd.DataFrame(
+        data=data,
+        index=pd.Index(list(map(frozenset, product(nodes,nodes))), name=node_type),
+        columns=pd.Index(iterations, name=iteration_type),
+        dtype=int,
+    ).drop(redundant_pairs, axis=0)
+
+
+    return df_pairs[~df_pairs.index.duplicated(keep="first")]
+
+# =======================================================
+# Data Structures
+# =======================================================
+# Symmetrical dataframes represented as augment pd.Series
+class Symmetric(object):
+    """
+    An indexable symmetric matrix stored as the lower triangle for space.
+
+    Usage:
+    import soothsayer_utils as syu
+    import ensemble_networkx as enx
+
+    # Load data
+    X, y, colors = syu.get_iris_data(["X", "y", "colors"])
+    n, m = X.shape
+
+    # Get association matrix (n,n)
+    method = "pearson"
+    df_sim = X.T.corr(method=method)
+    ratio = 0.382
+    number_of_edges = int((n**2 - n)/2)
+    number_of_edges_negative = int(ratio*number_of_edges)
+
+    # Make half of the edges negative to showcase edge coloring (not statistically meaningful at all)
+    for a, b in zip(np.random.RandomState(0).randint(low=0, high=149, size=number_of_edges_negative), np.random.RandomState(1).randint(low=0, high=149, size=number_of_edges_negative)):
+        if a != b:
+            df_sim.values[a,b] = df_sim.values[b,a] = df_sim.values[a,b]*-1
+
+    # Create a Symmetric object from the association matrix
+    sym_iris = enx.Symmetric(data=df_sim, node_type="iris sample", edge_type=method, name="iris", association="network")
+    # ====================================
+    # Symmetric(Name:iris, dtype: float64)
+    # ====================================
+    #     * Number of nodes (iris sample): 150
+    #     * Number of edges (correlation): 11175
+    #     * Association: network
+    #     * Memory: 174.609 KB
+    #     --------------------------------
+    #     | Weights
+    #     --------------------------------
+    #     (iris_1, iris_0)        0.995999
+    #     (iris_0, iris_2)        0.999974
+    #     (iris_3, iris_0)        0.998168
+    #     (iris_0, iris_4)        0.999347
+    #     (iris_0, iris_5)        0.999586
+    #                               ...   
+    #     (iris_148, iris_146)    0.988469
+    #     (iris_149, iris_146)    0.986481
+    #     (iris_147, iris_148)    0.995708
+    #     (iris_149, iris_147)    0.994460
+    #     (iris_149, iris_148)    0.999916
+
+    devel
+    =====
+    2020-June-23
+    * Replace self._dense_to_condensed to dense_to_condensed
+    * Dropped math operations
+    * Added input for Symmetric or pd.Series with a frozenset index
+
+    2018-August-16
+    * Added __add__, __sub__, etc.
+    * Removed conversion to dissimilarity for tree construction
+    * Added .iteritems method
+    
+
+    Future:
+    * Use `weights` instead of `data`
+    
+    Dropped:
+    Fix the diagonal arithmetic
+    """
+    def __init__(
+        self, 
+        data, 
+        name=None, 
+        node_type=None, 
+        edge_type=None, 
+        func_metric=None,  
+        association="infer", 
+        assert_symmetry=True, 
+        nans_ok=True, 
+        tol=None, 
+        # fillna=np.nan,
+        acceptable_associations={"similarity", "dissimilarity", "statistical_test", "network", "infer", None}, 
+        **attrs,
+        ):
+        
+        self._acceptable_associations = acceptable_associations
+        
+        self.name = name
+        self.node_type = node_type
+        self.edge_type = edge_type
+        self.func_metric = func_metric
+        self.association = association
+        self.diagonal = None
+        self.metadata = dict()
+
+        # From Symmetric object
+        if isinstance(data, type(self)):
+            if not nans_ok:
+                assert not np.any(data.weights.isnull()), "Cannot move forward with missing values"
+            self._from_symmetric(data=data, name=name, node_type=node_type, edge_type=edge_type, func_metric=func_metric, association=association)
+                
+        # From networkx
+        if isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)):
+            self._from_networkx(data=data, association=association)
+        
+        # From pandas
+        if isinstance(data, (pd.DataFrame, pd.Series)):
+            if not nans_ok:
+                assert not np.any(data.isnull()), "Cannot move forward with missing values"
+            # From pd.DataFrame object
+            if isinstance(data, pd.DataFrame):
+                self._from_pandas_dataframe(data=data, association=association, assert_symmetry=assert_symmetry, nans_ok=nans_ok, tol=tol)
+
+            # From pd.Series object
+            if isinstance(data, pd.Series):
+                self._from_pandas_series(data=data, association=association)
+                
+        # Universal
+        # If there's still no `edge_type` and `func_metric` is not empty, then use this the name of `func_metric`
+        if (self.edge_type is None) and (self.func_metric is not None):
+            self.edge_type = self.func_metric.__name__
+            
+        self.values = self.weights.values
+        self.number_of_nodes = self.nodes.size
+        self.number_of_edges = self.edges.size
+#         self.graph = self.to_networkx(into=graph) # Not storing graph because it will double the storage
+        self.memory = self.weights.memory_usage()
+        self.metadata.update(attrs)
+        self.__synthesized__ = datetime.datetime.utcnow()
+                                      
+ 
+
+    # =======
+    # Utility
+    # =======
+    def _infer_association(self, X):
+        diagonal = np.diagonal(X)
+        diagonal_elements = set(diagonal)
+        assert len(diagonal_elements) == 1, "Cannot infer relationships from diagonal because multiple values"
+        assert diagonal_elements <= {0,1}, "Diagonal should be either 0.0 for dissimilarity or 1.0 for similarity"
+        return {0.0:"dissimilarity", 1.0:"similarity"}[list(diagonal_elements)[0]]
+
+    def _from_symmetric(self,data, name, node_type, edge_type, func_metric, association):
+        self.__dict__.update(data.__dict__)
+        # If there's no `name`, then get `name` of `data`
+        if self.name is None:
+            self.name = name            
+        # If there's no `node_type`, then get `node_type` of `data`
+        if self.node_type is None:
+            self.node_type = node_type
+        # If there's no `edge_type`, then get `edge_type` of `data`
+        if self.edge_type is None:
+            self.edge_type = edge_type
+        # If there's no `func_metric`, then get `func_metric` of `data`
+        if self.func_metric is None:
+            if func_metric is not None:
+                assert hasattr(func_metric, "__call__"), "`func_metric` must be a function"
+                self.func_metric = func_metric
+
+        # Infer associations
+        if self.association is None:
+            assert_acceptable_arguments(association, self._acceptable_associations)
+            if association != "infer":
+                self.association = association
+            
+    def _from_networkx(self, data, association):
+        assert isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)), "`If data` is a graph, it must be in {nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
+        assert_acceptable_arguments(association, self._acceptable_associations)
+        if association == "infer":
+            if association is None:
+                association = "network"
+        assert_acceptable_arguments(association, self._acceptable_associations)
+        
+        # Propogate information from graph
+        for attr in ["name", "node_type", "edge_type", "func_metric"]:
+            if getattr(self, attr) is None:
+                if attr in data.graph:
+                    value = data.graph[attr]
+                    if bool(value):
+                        setattr(self, attr, value)
+                        
+        # Weights
+        edge_weights = dict()
+        for edge_data in data.edges(data=True):
+            edge = frozenset(edge_data[:-1])
+            weight = edge_data[-1]["weight"]
+            edge_weights[edge] = weight
+        data = pd.Series(edge_weights)
+        self._from_pandas_series(data=data, association=association)
+        
+            
+    def _from_pandas_dataframe(self, data:pd.DataFrame, association, assert_symmetry, nans_ok, tol):
+        if assert_symmetry:
+            assert is_symmetrical(data, tol=tol), "`X` is not symmetric.  Consider dropping the `tol` to a value such as `1e-10` or using `(X+X.T)/2` to force symmetry"
+        assert_acceptable_arguments(association, self._acceptable_associations)
+        if association == "infer":
+            association = self._infer_association(data)
+        self.association = association
+        self.nodes = pd.Index(data.index)
+        self.diagonal = pd.Series(np.diagonal(data), index=data.index, name="Diagonal")[self.nodes]
+        self.weights = dense_to_condensed(data, name="Weights", assert_symmetry=assert_symmetry, tol=tol)
+        self.edges = pd.Index(self.weights.index, name="Edges")
+                                      
+    def _from_pandas_series(self, data:pd.Series, association):
+        assert all(data.index.map(lambda edge: isinstance(edge, frozenset))), "If `data` is pd.Series then each key in the index must be a frozenset of size 2"
+        assert_acceptable_arguments(association, self._acceptable_associations)
+        if association == "infer":
+            association = None
+        self.association = association
+        # To ensure that the ordering is maintained and this is compatible with methods that use an unlabeled upper triangle, we must reindex and sort
+        self.nodes = pd.Index(sorted(frozenset.union(*data.index)))
+        self.edges = pd.Index(map(frozenset, combinations(self.nodes, r=2)), name="Edges")
+        self.weights = pd.Series(data, name="Weights").reindex(self.edges)
+        
+    def set_diagonal(self, diagonal):
+        if diagonal is None:
+            self.diagonal = None
+        else:
+            if is_number(diagonal):
+                diagonal = dict_build([(diagonal, self.nodes)])
+            assert is_dict_like(diagonal), "`diagonal` must be dict-like"
+            assert set(diagonal.keys()) >= set(self.nodes), "Not all `nodes` are in `diagonal`"
+            self.diagonal =  pd.Series(diagonal, name="Diagonal")[self.nodes]
+            
+    # =======
+    # Built-in
+    # =======
+    def __repr__(self):
+        pad = 4
+        header = format_header("Symmetric(Name:{}, dtype: {})".format(self.name, self.weights.dtype),line_character="=")
+        n = len(header.split("\n")[0])
+        fields = [
+            header,
+            pad*" " + "* Number of nodes ({}): {}".format(self.node_type, self.number_of_nodes),
+            pad*" " + "* Number of edges ({}): {}".format(self.edge_type, self.number_of_edges),
+            pad*" " + "* Association: {}".format(self.association),
+            pad*" " + "* Memory: {}".format(format_memory(self.memory)),
+            *map(lambda line:pad*" " + line, format_header("| Weights", "-", n=n-pad).split("\n")),
+            *map(lambda line: pad*" " + line, repr(self.weights).split("\n")[1:-1]),
+            ]
+
+        return "\n".join(fields)
+    
+    def __getitem__(self, key):
+        """
+        `key` can be a node or non-string iterable of edges
+        """
+
+        if is_nonstring_iterable(key):
+            assert len(key) >= 2, "`key` must have at least 2 identifiers. e.g. ('A','B')"
+            key = frozenset(key)
+            if len(key) == 1:
+                return self.diagonal[list(key)[0]]
+            else:
+                if len(key) > 2:
+                    key = list(map(frozenset, combinations(key, r=2)))
+                return self.weights[key]
+        else:
+            if key in self.nodes:
+                s = frozenset([key])
+                mask = self.edges.map(lambda x: bool(s & x))
+                return self.weights[mask]
+            else:
+                raise KeyError("{} not in node list".format(key))
+        
+    def __call__(self, key, func=np.sum):
+        """
+        This can be used for connectivity in the context of networks but can be confusing with the versatiliy of __getitem__
+        """
+        if hasattr(key, "__call__"):
+            return self.weights.groupby(key).apply(func)
+        else:
+            return func(self[key])
+        
+    def __len__(self):
+        return self.number_of_nodes
+    def __iter__(self):
+        for v in self.weights:
+            yield v
+    def items(self):
+        return self.weights.items()
+    def iteritems(self):
+        return self.weights.iteritems()
+    def keys(self):
+        return self.weights.keys()
+    
+    def apply(self, func):
+        return func(self.weights)
+    def mean(self):
+        return self.weights.mean()
+    def median(self):
+        return self.weights.median()
+    def min(self):
+        return self.weights.min()
+    def max(self):
+        return self.weights.max()
+    def idxmin(self):
+        return self.weights.idxmin()
+    def idxmax(self):
+        return self.weights.idxmax()
+    def sum(self):
+        return self.weights.sum()
+    def sem(self):
+        return self.weights.sem()
+    def var(self):
+        return self.weights.var()
+    def std(self):
+        return self.weights.std()
+    def describe(self, **kwargs):
+        return self.weights.describe(**kwargs)
+    def map(self, func):
+        return self.weights.map(func)
+    def entropy(self, base=2):
+        assert np.all(self.weights > 0), "All weights must be greater than 0"
+        return stats.entropy(self.weights, base=base)
+
+    # ==========
+    # Conversion
+    # ==========
+    def to_dense(self, index=None, fill_diagonal=None):
+        if fill_diagonal is None:
+            fill_diagonal=self.diagonal
+        if index is None:
+            index = self.nodes
+        return condensed_to_dense(y=self.weights, fill_diagonal=fill_diagonal, index=index)
+
+    def to_condensed(self):
+        return self.weights
+
+#     @check_packages(["ete3", "skbio"])
+#     def to_tree(self, method="average", into=None, node_prefix="y"):
+#         assert self.association == "dissimilarity", "`association` must be 'dissimilarity' to construct tree"
+#         if method in {"centroid", "median", "ward"}:
+#             warnings.warn("Methods ‘centroid’, ‘median’, and ‘ward’ are correctly defined only if Euclidean pairwise metric is used.\nSciPy Documentation - https://docs.scipy.org/doc/scipy/reference/generated/scipy.cluster.hierarchy.linkage.html#scipy.cluster.hierarchy.linkage") 
+#         if into is None:
+#             into = ete3.Tree
+#         if not hasattr(self,"Z"):
+#             self.Z = linkage(self.weights.values, metric="precomputed", method=method)
+#         if not hasattr(self,"newick"):
+#             self.newick = linkage_to_newick(self.Z, self.nodes)
+#         tree = into(newick=self.newick, name=self.name)
+#         return name_tree_nodes(tree, node_prefix)
+
+    def to_networkx(self, into=None, **attrs):
+        if into is None:
+            into = nx.Graph
+        metadata = { "node_type":self.node_type, "edge_type":self.edge_type, "func_metric":self.func_metric}
+        metadata.update(attrs)
+        graph = into(name=self.name, **metadata)
+        for (node_A, node_B), weight in self.weights.iteritems():
+            graph.add_edge(node_A, node_B, weight=weight)
+        return graph
+    
+    def to_file(self, path, **kwargs):
+        write_object(obj=self, path=path, **kwargs)
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 # ==============================================================================
 # Associations
@@ -116,6 +817,311 @@ def pairwise_biweight_midcorrelation(X, use_numba=False):
         result = pd.DataFrame(result, index=labels, columns=labels)
 
     return result
+
+# =============================
+# Feature Engineering
+# =============================
+class CategoricalEngineeredFeature(object):
+    """
+    Combine features using multiple categories.
+    
+    # =========================================
+    from soothsayer_utils import get_iris_data
+    from scipy import stats
+    import pandas as pd
+    import ensemble_networkx as enx
+
+    X, y = get_iris_data(["X","y"])
+    # Usage
+    CEF = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
+
+
+    # Add categories
+    category_1 = pd.Series(X.columns.map(lambda x:x.split("_")[0]), X.columns)
+    CEF.add_category(
+        name_category="leaf_type", 
+        mapping=category_1,
+    )
+    # Optionally add scaling factors, statistical tests, and summary statistics
+    # Compile all of the data
+    CEF.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
+    # Unpacking engineered groups: 100%|██████████| 1/1 [00:00<00:00, 2974.68it/s]
+    # Organizing feature sets: 100%|██████████| 4/4 [00:00<00:00, 17403.75it/s]
+    # Compiling synopsis [Basic Feature Info]: 100%|██████████| 2/2 [00:00<00:00, 32768.00it/s]
+    # Compiling synopsis [Scaling Factor Info]: 100%|██████████| 2/2 [00:00<00:00, 238.84it/s]
+
+    # View the engineered features
+    CEF.synopsis_
+    # 	initial_features	number_of_features	leaf_type(level:0)	scaling_factors	sum(scaling_factors)	mean(scaling_factors)	sem(scaling_factors)	std(scaling_factors)
+    # leaf_type								
+    # sepal	[sepal_width, sepal_length]	2	sepal	[458.6, 876.5]	1335.1	667.55	208.95	208.95
+    # petal	[petal_length, petal_width]	2	petal	[563.7, 179.90000000000003]	743.6	371.8	191.9	191.9
+
+    # Transform a dataset using the defined categories
+    CEF.fit_transform(X, aggregate_fn=np.sum)
+    # leaf_type	sepal	petal
+    # sample		
+    # iris_0	8.6	1.6
+    # iris_1	7.9	1.6
+    # iris_2	7.9	1.5
+    # iris_3	7.7	1.7
+
+    """
+    def __init__(self,
+                 initial_feature_type=None,
+                 engineered_feature_type=None,
+                 observation_type=None,
+                 unit_type=None,
+                 name=None,
+                 description=None,
+                 assert_mapping_intersection=False,
+                ):
+        self.initial_feature_type = initial_feature_type
+        self.engineered_feature_type=engineered_feature_type
+        self.observation_type = observation_type
+        self.unit_type = unit_type
+        self.name = name
+        self.description = description
+        self.assert_mapping_intersection = assert_mapping_intersection
+        self.__data__ = dict()
+        self.compiled_ = False
+        
+    def add_category(self, name_category:Hashable, mapping:Union[Mapping, pd.Series], level:int="infer", assert_mapping_exclusiveness=False, assert_level_nonexistent=True):
+        if level == "infer":
+            level = len(self.__data__)
+        assert name_category not in self.__data__, "Already added category: {}".format(name_category)
+        assert isinstance(mapping, (Mapping, pd.Series)), "`mapping` must be dict-like"
+        # Force iterables into set type
+        def f(x):
+            # How should this handle frozensets and tuples?
+            if is_nonstring_iterable(x) and not isinstance(x, Hashable):
+                if assert_mapping_exclusiveness:
+                    raise AssertionError("name_category=`{}` must have one-to-one mapping exclusiveness.  If this is not desired, please set `assert_mapping_exclusiveness=False` when adding component via `add_category`".format(name_category))
+                x = set(x)
+            return x
+        # Add categories
+        if assert_level_nonexistent:
+            assert level not in self.__data__, "`level={}` already existent".format(level)
+        self.__data__[level] = {
+            "name_category":name_category,
+            "mapping":pd.Series(mapping).map(f)
+        }
+        
+
+        return self
+    
+    # Compile all the categories
+    def compile(
+        self,
+        scaling_factors:pd.Series=None, # e.g. Gene Lengths,
+        stats_summary = [np.sum, np.mean, stats.sem, np.std],
+        stats_tests = [],
+        ):
+        
+        # Check features
+        def check_initial_features():
+            self.initial_features_union_ = set.union(*map(lambda dict_values: set(dict_values["mapping"].index), self.__data__.values()))
+            self.initial_features_intersection_ = set.union(*map(lambda dict_values: set(dict_values["mapping"].index), self.__data__.values()))
+            if self.assert_mapping_intersection:
+                assert self.initial_features_union_ == self.initial_features_intersection_, \
+                "All `mapping` must have same features mapped.  features_union = {}; features_intersection = {}".format(
+                    len(self.initial_features_union_), 
+                    len(self.initial_features_intersection_),
+                )
+            if scaling_factors is not None:
+                assert isinstance(scaling_factors, (Mapping, pd.Series)), "`scaling_factors` must be dict-like"
+                self.scaling_factors_ = pd.Series(scaling_factors)
+                assert set(self.initial_features_intersection_) <= set(self.scaling_factors_.index), "`scaling_factors` does not have all required `initial_features_intersection_`.  In particular, the following number of features are missing:\n{}".format(len(self.initial_features_intersection_ - set(query_features)))
+                
+            else:
+                self.scaling_factors_ = None
+                
+            
+        # Organizing features and groups
+        def organize_and_group_initial_features():
+            # Organize the data w/ respect to feature
+            feature_to_grouping = defaultdict(lambda: defaultdict(set))
+            for level, data in pv(sorted(self.__data__.items(), key=lambda item:item[0]), description="Unpacking engineered groups"):
+                name_category = data["name_category"]
+                for id_feature, values in data["mapping"].items():
+                    if isinstance(values, Hashable):
+                        values = set([values])
+                    for v in values:
+                        feature_to_grouping[id_feature][level].add(v)
+
+            # Organize the groups and create sets of features
+            self.engineered_to_initial_features_ = defaultdict(set)
+            self.initial_features_ = set(feature_to_grouping.keys())
+            for id_feature, grouping in pv(feature_to_grouping.items(), description="Organizing feature sets"):
+                grouping_iterables = map(lambda item: item[1], sorted(grouping.items(), key=lambda item: item[0]))
+                for engineered_feature in product(*grouping_iterables):
+                    if len(engineered_feature) == self.number_of_levels_:
+                        self.engineered_to_initial_features_[engineered_feature].add(id_feature)
+        
+        # Compute synopsis
+        def get_synopsis():
+            name_to_level = dict(map(lambda item: (item[1]["name_category"], item[0]), self.__data__.items()))
+            self.synopsis_ = defaultdict(dict)
+            for engineered_feature, initial_features in pv(self.engineered_to_initial_features_.items(), description="Compiling synopsis [Basic Feature Info]"):
+                self.synopsis_[engineered_feature]["initial_features"] = list(initial_features)
+                self.synopsis_[engineered_feature]["number_of_features"] = len(initial_features)                
+                for i, value in enumerate(engineered_feature):
+                    level = self.levels_[i]
+                    name_category = self.__data__[level]["name_category"]
+                    self.synopsis_[engineered_feature]["{}(level:{})".format(name_category, level)] = value
+
+            if self.scaling_factors_ is not None:
+                for engineered_feature in pv(self.synopsis_.keys(), description="Compiling synopsis [Scaling Factor Info]"):
+                    initial_features = self.synopsis_[engineered_feature]["initial_features"]
+                    query_scaling_factors = self.scaling_factors_[initial_features]
+                    self.synopsis_[engineered_feature]["scaling_factors"] = list(query_scaling_factors)
+                    
+                    for func in stats_summary:
+                        with Suppress():
+                            self.synopsis_[engineered_feature]["{}(scaling_factors)".format(func.__name__)] = func(query_scaling_factors)
+                        
+                    for func in stats_tests:
+                        with Suppress():
+                            try:
+                                stat, p = func(query_scaling_factors)
+                                self.synopsis_[engineered_feature]["{}|stat(scaling_factors)".format(func.__name__)] = stat
+                                self.synopsis_[engineered_feature]["{}|p_value(scaling_factors)".format(func.__name__)] = p
+                            except:
+                                pass
+
+
+            self.synopsis_ = pd.DataFrame(self.synopsis_).T
+            if isinstance(self.synopsis_.index, pd.MultiIndex):
+                self.synopsis_.index.names = map(lambda item: item[1]["name_category"], sorted(self.__data__.items(), key=lambda item:item[0]))
+                        
+        # Basic Info
+        self.levels_ = list(self.__data__.keys())
+        self.number_of_levels_ = len(self.__data__)
+        if stats_summary is None:
+            stats_summary = []
+        if stats_tests is None:
+            stats_tests = []
+            
+        # Run compilation
+        print(format_header("CategoricalEngineeredFeature(Name:{})".format(self.name),line_character="="), file=sys.stderr)
+        check_initial_features()
+        organize_and_group_initial_features()
+        get_synopsis()   
+        self.stats_summary_ = stats_summary
+        self.stats_tests_ = stats_tests
+        self.memory = sys.getsizeof(self)
+        self.compiled_ = True
+        return self
+    
+    # Transform a dataset
+    def fit_transform(
+        self, 
+        X:pd.DataFrame,         
+        aggregate_fn=np.sum,
+        ) -> pd.DataFrame:
+        query_features = set(X.columns)
+        assert query_features >= self.initial_features_, "X.columns does not have all required `initial_features_`.  In particular, the following number of features are missing:\n{}".format(len(self.initial_features_ - query_features))
+        
+        # Aggregate features
+        results = dict()
+        for engineered_feature, initial_features in pv(self.engineered_to_initial_features_.items(), description="Aggregating engineered features"):
+            X_subset = X[initial_features]
+            aggregate = X_subset.apply(aggregate_fn, axis=1)
+            results[engineered_feature] = aggregate
+        df_aggregate = pd.DataFrame(results)
+        
+        # Properly label MultiIndex
+        if isinstance(df_aggregate.columns, pd.MultiIndex):
+            df_aggregate.columns.names = map(lambda item: item[1]["name_category"], sorted(self.__data__.items(), key=lambda item:item[0]))
+#         df_aggregate.columns.names = self.synopsis_.index.names
+        df_aggregate.index.name = self.observation_type
+        return df_aggregate
+    
+    # =======
+    # Built-in
+    # =======
+
+    def __repr__(self):
+        pad = 4
+        n_preview = 5
+        header = format_header("CategoricalEngineeredFeature(Name:{})".format(self.name),line_character="=")
+        n = len(header.split("\n")[0])
+        fields = [
+            header,
+            pad*" " + "* Number of levels: {}".format(self.number_of_levels_),
+            pad*" " + "* Memory: {}".format(format_memory(self.memory)),
+            pad*" " + "* Compiled: {}".format(self.compiled_),
+            ]
+        # Types
+        fields += [
+            *map(lambda line:pad*" " + line, format_header("| Types", "-", n=n-pad).split("\n")),
+            pad*" " + "* Initial feature type: {}".format(self.initial_feature_type),
+            pad*" " + "* Engineered feature type: {}".format(self.engineered_feature_type),
+            pad*" " + "* Observation feature type: {}".format(self.observation_type),
+            pad*" " + "* Unit type: {}".format(self.unit_type),
+        ]
+
+        if self.compiled_:
+            fields += [
+                *map(lambda line:pad*" " + line, format_header("| Statistics", "-", n=n-pad).split("\n")),
+                2*pad*" " + "Scaling Factors: {}".format(self.scaling_factors_ is not None),
+                2*pad*" " + "Summary: {}".format(list(map(lambda fn: fn.__name__, self.stats_summary_))),
+                2*pad*" " + "Tests: {}".format(list(map(lambda fn: fn.__name__, self.stats_tests_))),
+
+            ]
+            fields += [
+                *map(lambda line:pad*" " + line, format_header("| Categories", "-", n=n-pad).split("\n")),
+            ]
+            for level, d in self.__data__.items():
+                fields += [
+                    pad*" " + "* Level {} - {}:".format(level, d["name_category"]),
+                    2*pad*" " + "Number of initial features: {}".format(d["mapping"].index.nunique()),
+                    2*pad*" " + "Number of categories: {}".format(len(flatten(d["mapping"].values, into=set))), 
+                ]
+            fields += [
+                *map(lambda line:pad*" " + line, format_header("| Features", "-", n=n-pad).split("\n")),
+            ]
+                
+            fields += [
+                pad*" " + 2*" " + "Number of initial features (Intersection): {}".format(len(self.initial_features_intersection_)),
+                pad*" " + 2*" " + "Number of initial features (Union): {}".format(len(self.initial_features_union_)),
+                pad*" " + 2*" " + "Number of engineered features: {}".format(len(self.engineered_to_initial_features_)),                
+            ]
+
+
+        return "\n".join(fields)
+    
+    def __getitem__(self, key):
+        """
+        `key` can be a node or non-string iterable of edges
+        """
+        recognized = False
+        if isinstance(key, int):
+            try:
+                recognized = True
+                return self.__data__[key]
+            except KeyError:
+                raise KeyError("{} level not in self.__data__".format(key))
+        if isinstance(key, tuple):
+            assert self.compiled_, "Please compile before using self.__getitem__ method."
+            try:
+                recognized = True
+                return self.engineered_to_initial_features_[key]
+            except KeyError:
+                raise KeyError("{} engineered feature not in self.engineered_to_initial_features_".format(key))
+        if not recognized:
+            raise KeyError("Could not interpret key: {}. Please use self.__getitem__ method for querying level data with an int or features with a tuple.".format(key))
+        
+    def __len__(self):
+        return len(self.engineered_to_initial_features_)
+    def __iter__(self):
+        for v in self.engineered_to_initial_features_.items():
+            yield v
+    def items(self):
+        return self.engineered_to_initial_features_.items()
+    def iteritems(self):
+        for v in self.engineered_to_initial_features_.items():
+            yield v
 
 # =============================
 # Ensemble Association Networks
@@ -1039,7 +2045,7 @@ class DifferentialEnsembleAssociationNetwork(object):
         with_replacement=False,
         function_is_pairwise=True,
         stats_comparative = [stats.wasserstein_distance],
-        stats_tests_comparative = None,
+        stats_tests_comparative = [stats.mannwhitneyu],
         stats_summary_initial=[np.mean, np.var, stats.kurtosis, stats.skew],
         stats_tests_initial=[stats.normaltest],
         stats_differential=[np.mean],
@@ -1102,7 +2108,7 @@ class DifferentialEnsembleAssociationNetwork(object):
         )
 
         # Treatment samples
-        index_treatment = y[lambda i: i != treatment].index #sorted(set(X.index) - set(index_reference))
+        index_treatment = y[lambda i: i == treatment].index #sorted(set(X.index) - set(index_reference))
         ensemble_treatment = EnsembleAssociationNetwork(
                 name=treatment, 
                 node_type=self.node_type, 
@@ -1160,21 +2166,28 @@ class DifferentialEnsembleAssociationNetwork(object):
         # Comparative statistics
         k = 0
         if stats_comparative is not None:
-            for func in stats_comparative:  
+            for func in pv(stats_comparative, description="Computing comparative statistics", unit="stat"):  
                 for i in range(number_of_edges):
                     u = ensemble_reference.ensemble_.values[:,i]
                     v = ensemble_treatment.ensemble_.values[:,i]
-                    self.stats_comparative_[i,k] = func(u, v)
+                    try:
+                        stat = func(u, v)
+                    except ValueError:
+                        stat = np.nan
+                    self.stats_comparative_[i,k] = stat
                 k += 1
 
-            if stats_tests_comparative:# is not None:
-                for func in stats_tests_comparative:
-                    for i in range(number_of_edges):
-                        u = ensemble_reference.ensemble_.values[:,i]
-                        v = ensemble_treatment.ensemble_.values[:,i]
+        if stats_tests_comparative:# is not None:
+            for func in pv(stats_tests_comparative, description="Computing comparative tests", unit="stat"):
+                for i in range(number_of_edges):
+                    u = ensemble_reference.ensemble_.values[:,i]
+                    v = ensemble_treatment.ensemble_.values[:,i]
+                    try:
                         stat, p = func(u, v)
-                        self.stats_comparative_[i, [k, k+1]] = [stat,p]
-                    k += 2
+                    except ValueError:
+                        stat, p = np.nan, np.nan
+                    self.stats_comparative_[i, [k, k+1]] = [stat,p]
+                k += 2
                     
             
        # Comparative statistics
@@ -1189,7 +2202,7 @@ class DifferentialEnsembleAssociationNetwork(object):
 
         # Differential statistics
         self.ensemble_ = list()
-        for func in stats_differential:
+        for func in pv(stats_differential, description="Computing differential", unit="stat"):
             func_name = func
             if hasattr(func, "__call__"):
                 func_name = func.__name__
@@ -1360,3 +2373,4 @@ class DifferentialEnsembleAssociationNetwork(object):
                 pad*" " + "* Observation type: {}".format(self.observation_type),
                 ]
             return "\n".join(fields)
+

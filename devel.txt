@@ -1,2 +1,3 @@
-* 2020 07.24 - Added `DifferentialEnsembleAssociationNetwork`
+* 2021.03.09 - Large changes took place in this version.  Removed dependency of HiveNetworkX and moved many non-Hive plot functions/classes to EnsembleNetworkX.  Now HiveNetworkX depends on EnsembleNetworkX which will be the more generalizable extension to NetworkX in the Soothsayer ecosystem while maintaining HiveNetworkX's core object on Hive plots. This version has also incorporated a feature engineering class called `CategoricalEngineeredFeature` that is a generalizable replacement to Soothsayer's PhylogenomicFunctionalComponent (which is being deprecated).
+* 2020.07.24 - Added `DifferentialEnsembleAssociationNetwork`
 * 2020.07.21 - `SampleSpecificPerturbationNetwork` fit method returns self
