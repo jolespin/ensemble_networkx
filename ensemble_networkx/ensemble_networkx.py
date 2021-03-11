@@ -921,7 +921,7 @@ class CategoricalEngineeredFeature(object):
         # Check features
         def check_initial_features():
             self.initial_features_union_ = set.union(*map(lambda dict_values: set(dict_values["mapping"].index), self.__data__.values()))
-            self.initial_features_intersection_ = set.union(*map(lambda dict_values: set(dict_values["mapping"].index), self.__data__.values()))
+            self.initial_features_intersection_ = set.intersection(*map(lambda dict_values: set(dict_values["mapping"].index), self.__data__.values()))
             if self.assert_mapping_intersection:
                 assert self.initial_features_union_ == self.initial_features_intersection_, \
                 "All `mapping` must have same features mapped.  features_union = {}; features_intersection = {}".format(
@@ -1122,6 +1122,12 @@ class CategoricalEngineeredFeature(object):
     def iteritems(self):
         for v in self.engineered_to_initial_features_.items():
             yield v
+            
+    def to_file(self, path, **kwargs):
+        write_object(obj=self, path=path, **kwargs)
+
+    def copy(self):
+        return copy.deepcopy(self)
 
 # =============================
 # Ensemble Association Networks
