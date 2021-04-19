@@ -33,7 +33,7 @@
 # =======
 # Version
 # =======
-__version__= "2021.03.11"
+__version__= "2021.04.12"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -56,7 +56,8 @@ __functions__ = [
     "centralization",
     "heterogeneity",
     "topological_overlap_measure",
-    "cluster_modularity",
+    "community_detection",
+    "cluster_homogeneity",
 ]
 __classes__ = [
     'EnsembleAssociationNetwork', 

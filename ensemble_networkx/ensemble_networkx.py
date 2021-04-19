@@ -306,35 +306,107 @@ def topological_overlap_measure(data, into=None, node_type=None, edge_type="topo
 
 
 # =======================================================
-# Modularity
+# Community Detection
 # =======================================================
-# Cluster modularity matrix
-def cluster_modularity(df:pd.DataFrame, node_type="node", iteration_type="iteration"):
+# Graph community detection
+def community_detection(graph, n_iter:int=100, weight:str="weight", random_state:int=0, algorithm="louvain", algo_kws=dict()):
+    assert isinstance(n_iter, int)
+    assert isinstance(random_state, int)
+    assert isinstance(algorithm, str)
+    assert_acceptable_arguments(algorithm, {"louvain", "leiden"})
+    
+    # Louvain    
+    if algorithm == "louvain":
+        try:
+            from community import best_partition
+        except ModuleNotFoundError:
+            Exception("Please install `python-louvain` to use {} algorithm".format(algorithm))
+    
+        # Keywords
+        _algo_kws = {}
+        _algo_kws.update(algo_kws)
+        
+        def partition_function(graph, weight, random_state, algo_kws):
+            return best_partition(graph, weight=weight, random_state=random_state, **algo_kws)
+        
+    # Leiden
+    if algorithm == "leiden":
+        try:
+            import igraph as ig
+        except ModuleNotFoundError:
+            Exception("Please install `igraph` to use {} algorithm".format(algorithm))
+        try:
+            from leidenalg import find_partition, ModularityVertexPartition
+        except ModuleNotFoundError:
+            Exception("Please install `leidenalg` to use {} algorithm".format(algorithm))
+
+        # Convert NetworkX to iGraph
+        graph = ig.Graph.from_networkx(graph)
+        nodes_list = np.asarray(graph.vs["_nx_name"])
+        
+        # Keywords
+        _algo_kws = {"partition_type":ModularityVertexPartition, "n_iterations":-1}
+        _algo_kws.update(algo_kws)
+        
+        def partition_function(graph, weight, random_state, algo_kws, nodes_list=nodes_list):
+            node_to_partition = dict()
+            for partition, nodes in enumerate(find_partition(graph, weights=weight, seed=random_state, **algo_kws)):
+                mapping = dict(zip(nodes_list[nodes], [partition]*len(nodes)))
+                node_to_partition.update(mapping)
+            return node_to_partition
+    
+    # Get partitions
+    partitions = dict()
+    for rs in pv(range(random_state, n_iter + random_state), "Detecting communities via `{}` algorithm".format(algorithm)):
+        partitions[rs] = partition_function(graph=graph, weight=weight, random_state=rs, algo_kws=_algo_kws)
+        
+    # Create DataFrame
+    df = pd.DataFrame(partitions)
+    df.index.name = "Node"
+    df.columns.name = "Partition"
+    return df
+
+# Cluster homogeneity matrix
+def cluster_homogeneity(df:pd.DataFrame, edge_type="Edge", iteration_type="Iteration"):
     """
+    # Create Graph
+    from soothsayer_utils import get_iris_data
+    df_adj = get_iris_data(["X"]).iloc[:5].T.corr() + np.random.RandomState(0).normal(size=(5,5))
+    graph = nx.from_pandas_adjacency(df_adj)
+    graph.nodes()
+    # NodeView(('sepal_length', 'sepal_width', 'petal_length', 'petal_width'))
 
-    n_louvain = 100
+    # Community detection (network clustering)
+    df_louvain = community_detection(graph, n_iter=10, algorithm="louvain")
+    df_louvain
+    # Partition	0	1	2	3	4	5	6	7	8	9
+    # Node										
+    # iris_0	0	0	0	0	0	0	0	0	0	0
+    # iris_1	1	1	1	1	1	1	1	1	1	1
+    # iris_2	1	2	2	2	2	1	2	2	2	2
+    # iris_3	0	1	1	1	1	0	1	1	1	1
+    # iris_4	2	3	3	3	3	2	3	3	3	3
 
-    louvain = dict()
-    for rs in tqdm(range(n_louvain), "Louvain"):
-        louvain[rs] = community.best_partition(graph_unsigned, random_state=rs)
-    df = pd.DataFrame(louvain)
+    # Determine cluster homogeneity
+    df_homogeneity = cluster_homogeneity(df_louvain)
+    df_homogeneity
+    # Iteration	0	1	2	3	4	5	6	7	8	9
+    # Edge										
+    # (iris_1, iris_0)	0	0	0	0	0	0	0	0	0	0
+    # (iris_2, iris_0)	0	0	0	0	0	0	0	0	0	0
+    # (iris_3, iris_0)	1	0	0	0	0	1	0	0	0	0
+    # (iris_4, iris_0)	0	0	0	0	0	0	0	0	0	0
+    # (iris_1, iris_2)	1	0	0	0	0	1	0	0	0	0
+    # (iris_3, iris_1)	0	1	1	1	1	0	1	1	1	1
+    # (iris_4, iris_1)	0	0	0	0	0	0	0	0	0	0
+    # (iris_3, iris_2)	0	0	0	0	0	0	0	0	0	0
+    # (iris_4, iris_2)	0	0	0	0	0	0	0	0	0	0
+    # (iris_4, iris_3)	0	0	0	0	0	0	0	0	0	0
 
-    # df.head()
-    # 	0	1	2	3	4	5	6	7	8	9
-    # a	0	0	0	0	0	0	0	0	0	0
-    # b	1	1	1	1	1	1	1	1	1	1
-    # c	2	2	2	2	2	2	2	2	2	2
-    # d	3	3	3	3	3	3	3	3	3	3
-    # e	4	1	1	4	1	4	4	1	4	1
-
-    cluster_modularity(df).head()
-    iteration  0  1  2  3  4  5  6  7  8  9
-    node
-    (b, a)     0  0  0  0  0  0  0  0  0  0
-    (c, a)     0  0  0  0  0  0  0  0  0  0
-    (d, a)     0  0  0  0  0  0  0  0  0  0
-    (e, a)     0  0  0  0  0  0  0  0  0  0
-    (a, f)     0  0  0  0  0  0  0  0  0  0
+    df_homogeneity.mean(axis=1)[lambda x: x > 0.5]
+    # Edge
+    # (iris_3, iris_1)    0.8
+    # dtype: float64
     """
 
     # Adapted from @code-different:
@@ -363,14 +435,13 @@ def cluster_modularity(df:pd.DataFrame, node_type="node", iteration_type="iterat
     # Create pairwise clustering matrix
     df_pairs = pd.DataFrame(
         data=data,
-        index=pd.Index(list(map(frozenset, product(nodes,nodes))), name=node_type),
+        index=pd.Index(list(map(frozenset, product(nodes,nodes))), name=edge_type),
         columns=pd.Index(iterations, name=iteration_type),
         dtype=int,
     ).drop(redundant_pairs, axis=0)
 
 
     return df_pairs[~df_pairs.index.duplicated(keep="first")]
-
 # =======================================================
 # Data Structures
 # =======================================================
