@@ -54,19 +54,32 @@ def dense_to_condensed(X, name=None, assert_symmetry=True, tol=None):
     return pd.Series(data, index=index, name=name)
 
 # pd.Series to pd.DataFrame 2D
-def condensed_to_dense(y:pd.Series, fill_diagonal=np.nan, index=None):
+def condensed_to_dense(y:pd.Series, fill_diagonal="infer", index=None):
+    # Check if there are self-interactions
+    number_of_unique_nodes_in_edges = y.index.map(len).unique()
+    assert set(number_of_unique_nodes_in_edges) <= {1,2}, "Number of unique nodes in edge must be either 1 or 2"
+    if fill_diagonal == "infer":
+        if number_of_unique_nodes_in_edges.min() == 1:
+            fill_diagonal = None
+ 
     # Need to optimize this
     data = defaultdict(dict)
     for edge, w in y.iteritems():
-        node_a, node_b = tuple(edge)
+        number_of_unique_nodes = len(edge)
+        if len(edge) == 2:
+            node_a, node_b = tuple(edge)
+        else:
+            node_a = node_b = list(edge)[0]
+            
         data[node_a][node_b] = data[node_b][node_a] = w
         
-    if is_dict_like(fill_diagonal):
-        for node in data:
-            data[node][node] = fill_diagonal[node]
-    else:
-        for node in data:
-            data[node][node] = fill_diagonal
+    if fill_diagonal is not None:
+        if is_dict_like(fill_diagonal):
+            for node in data:
+                data[node][node] = fill_diagonal[node]
+        else:
+            for node in data:
+                data[node][node] = fill_diagonal
             
     df_dense = pd.DataFrame(data)
     if index is None:
@@ -186,7 +199,7 @@ def connectivity(data, groups:pd.Series=None, include_self_loops=False, tol=1e-1
         #kWithin
         k_within = list()
         for group in groups.unique():
-            idx_nodes = groups[lambda x: x == group].index & df_dense.index
+            idx_nodes = pd.Index(sorted(set(groups[lambda x: x == group].index) & set(df_dense.index)))
             k_group = df_dense.loc[idx_nodes,idx_nodes].sum(axis=1)
             k_within.append(k_group)
         data_connectivity["kWithin"] = pd.concat(k_within)

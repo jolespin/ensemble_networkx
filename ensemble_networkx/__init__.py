@@ -33,7 +33,7 @@
 # =======
 # Version
 # =======
-__version__= "2021.04.12"
+__version__= "2021.06.09"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
