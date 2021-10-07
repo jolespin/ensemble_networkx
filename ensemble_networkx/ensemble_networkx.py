@@ -44,6 +44,15 @@ def signed(X):
 # ===================
 # Converting Networks
 # ===================
+#Get weights from graph
+def get_weights_from_graph(graph, into=np.asarray, weight="weight",  generator=False):
+    weights = map(lambda edge_data: edge_data[-1][weight], graph.edges(data=True))
+    if generator:
+        return weights
+    else:
+        weights = list(weights)
+        return into(weights)
+        
 # pd.DataFrame 2D to pd.Series
 def dense_to_condensed(X, name=None, assert_symmetry=True, tol=None):
     if assert_symmetry:
@@ -58,9 +67,12 @@ def condensed_to_dense(y:pd.Series, fill_diagonal="infer", index=None):
     # Check if there are self-interactions
     number_of_unique_nodes_in_edges = y.index.map(len).unique()
     assert set(number_of_unique_nodes_in_edges) <= {1,2}, "Number of unique nodes in edge must be either 1 or 2"
-    if fill_diagonal == "infer":
-        if number_of_unique_nodes_in_edges.min() == 1:
-            fill_diagonal = None
+    if isinstance(fill_diagonal, str):
+        if fill_diagonal == "infer":
+            if number_of_unique_nodes_in_edges.min() == 1:
+                fill_diagonal = None
+            else:
+                fill_diagonal = np.nan
  
     # Need to optimize this
     data = defaultdict(dict)
@@ -968,6 +980,8 @@ class CategoricalEngineeredFeature(object):
         self.description = description
         self.assert_mapping_intersection = assert_mapping_intersection
         self.__data__ = dict()
+        self.number_of_levels_ = 0
+        self.memory_ = sys.getsizeof(self)
         self.compiled_ = False
         
     def add_category(self, name_category:Hashable, mapping:Union[Mapping, pd.Series], level:int="infer", assert_mapping_exclusiveness=False, assert_level_nonexistent=True):
@@ -1093,7 +1107,7 @@ class CategoricalEngineeredFeature(object):
         get_synopsis()   
         self.stats_summary_ = stats_summary
         self.stats_tests_ = stats_tests
-        self.memory = sys.getsizeof(self)
+        self.memory_ = sys.getsizeof(self)
         self.compiled_ = True
         return self
     
@@ -1133,7 +1147,7 @@ class CategoricalEngineeredFeature(object):
         fields = [
             header,
             pad*" " + "* Number of levels: {}".format(self.number_of_levels_),
-            pad*" " + "* Memory: {}".format(format_memory(self.memory)),
+            pad*" " + "* Memory: {}".format(format_memory(self.memory_)),
             pad*" " + "* Compiled: {}".format(self.compiled_),
             ]
         # Types

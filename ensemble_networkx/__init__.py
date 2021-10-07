@@ -33,7 +33,7 @@
 # =======
 # Version
 # =======
-__version__= "2021.06.09"
+__version__= "2021.06.24"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -47,6 +47,7 @@ __functions__ = [
     "pairwise_biweight_midcorrelation",
 ] + [
     "signed",
+    "get_weights_from_graph",
     "dense_to_condensed",
     "condensed_to_dense",
     "convert_network",

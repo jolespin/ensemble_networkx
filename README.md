@@ -12,6 +12,11 @@ Compatible for Python 3.
     matplotlib >= 3
     soothsayer_utils >= 2021.03.08
     compositional >= 2020.05.19
+    
+#### Citations (Debut):
+   
+   * Nabwera, HM+, Espinoza, JL+, Worwui A, Betts, M, Okoi C, Sesay AK., Bancroft W, Agbla SC., Jarju S, Bradbury RS., Colley M, Jallow AT, Liu J, Houpt ER., Prentice AM, Antonio M, Bernstein RM., Dupont CL.+, Kwambana-Adams BA.+ Interactions between fecal gut microbiome, enteric pathogens, and energy regulating hormones among acutely malnourished rural Gambian children. Accepted in EBioMedicine.
+   
 
 #### Install:
 ```
