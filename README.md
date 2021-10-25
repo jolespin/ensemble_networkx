@@ -1,67 +1,280 @@
 
-<img src="logo/soothsayer_square.png" width=200>
+### Ensemble NetworkX
+High-level [Ensemble](https://en.wikipedia.org/wiki/Ensemble_averaging_(machine_learning)) Network implementations in Python.  Built on top of [NetworkX](https://github.com/networkx/networkx) and [Pandas](https://pandas.pydata.org/).  
 
-_________________________________
-#### Description:
-*Soothsayer* is a high-level package for (bio-)informatics with various methods for network analysis, hierarchical ensembles of classifiers, feature selection, plotting, and more.
+#### Dependencies:
+Compatible for Python 3.
 
-#### Current Version:
-*v2021.07.27*
+    pandas >= 1
+    numpy
+    scipy >= 1
+    networkx >= 2
+    matplotlib >= 3
+    soothsayer_utils >= 2021.03.08
+    compositional >= 2020.05.19
+    
+#### Citations (Debut):
+   
+   * Nabwera, HM+, Espinoza, JL+, Worwui A, Betts, M, Okoi C, Sesay AK., Bancroft W, Agbla SC., Jarju S, Bradbury RS., Colley M, Jallow AT, Liu J, Houpt ER., Prentice AM, Antonio M, Bernstein RM., Dupont CL.+, Kwambana-Adams BA.+ *Interactions between fecal gut microbiome, enteric pathogens, and energy regulating hormones among acutely malnourished rural Gambian children.* EBioMedicine. [doi:10.1016/j.ebiom.2021.103644](https://doi.org/10.1016/j.ebiom.2021.103644).
 
-#### Citation:
-Espinoza JL, Dupont CL, O’Rourke A, Beyhan S, Morales P, et al. (2021) Predicting antimicrobial mechanism-of-action from transcriptomes: A generalizable explainable artificial intelligence approach. PLOS Computational Biology 17(3): e1008857. [https://doi.org/10.1371/journal.pcbi.1008857](https://doi.org/10.1371/journal.pcbi.1008857)
 
-#### Contact:
-Josh L. Espinoza: [jespinoz@jcvi.org](jespinoz@jcvi.org).
+#### Install:
+```
+# "Stable" release (still developmental)
+pip install ensemble_networkx
+# Current release
+pip install git+https://github.com/jolespin/ensemble_networkx
+```
 
-_________________________________
-
-#### *Soothsayer* Ecosystem:
-* [soothsayer_utils](https://github.com/jolespin/soothsayer_utils) - Utility functions for *Soothsayer*
-* [ensemble_networkx](https://github.com/jolespin/ensemble_networkx) - High-level Ensemble Network implementations in Python. Built on top of NetworkX and Pandas.
-* [hive_networkx](https://github.com/jolespin/hive_networkx) - High-level Hive plot (Martin Krzywinski et al. 2012) implementations using *Matplotlib* in Python. Built on top of *NetworkX* and *Pandas*.
-* [compositional](https://github.com/jolespin/compositional) - Compositional data analysis in Python.
-
-_________________________________
+#### Source:
+* Migrated from [`soothsayer`](https://github.com/jolespin/soothsayer)
 
 #### Case studies, tutorials and usage:
 Documentation will be released upon version 1.0 once API is stabilized.
 
-* [Antimicrobial resistance modeling associated with Espinoza & Dupont et al. 2021](https://github.com/jolespin/projects/blob/main/antimicrobial_resistance_modeling/Espinoza-Dupont_et_al_2021/Notebooks/markdown_version/Espinoza-Dupont_et_al_2021__Supplemental.md)
-* [Feature selection using *Clairvoyance* on the Iris dataset with 1000 noise attributes](tutorials/Notebooks/markdown_versions/Denoising_Iris-plus-Noise_with_Clairvoyance/Denoising_Iris-plus-Noise_with_Clairvoyance.md)
+* [Multimodal sample-specific perturbation networks and undernutrition modeling from Nabwera & Espinoza et al. 2021](https://github.com/jolespin/projects/blob/main/gambia_gut_undernutrition_microbiome/Nabwera-Espinoza_et_al_2021/Notebooks/markdown_version/Nabwera-Espinoza_et_al_2021.md)
 
-_________________________________
+```python
+import ensemble_networkx as enx
+```
 
-#### Installation:
-**Please refer to the [installation manual](install/README.md) for installation details.**  
-It will make the installation process *much easier* due to all of the Python and R dependencies. 
+##### Simple case of an [iris dataset](https://en.wikipedia.org/wiki/Iris_flower_data_set) ensemble network
 
-* pip: [https://pypi.org/project/soothsayer](https://pypi.org/project/soothsayer)
+```python
+# Load in data
+import soothsayer_utils as syu
+X = syu.get_iris_data(["X"])
 
-_________________________________
+# Create ensemble network
+ens = enx.EnsembleAssociationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+ens.fit(X=X, metric="spearman",  n_iter=100, stats_summary=[np.mean,np.var, stats.kurtosis, stats.skew], stats_tests=[stats.normaltest], copy_ensemble=True)
+print(ens)
+# =======================================================
+# EnsembleAssociationNetwork(Name:Iris, Metric: spearman)
+# =======================================================
+#     * Number of nodes (leaf measurement): 4
+#     * Number of edges (association): 6
+#     * Observation type: specimen
+#     ---------------------------------------------------
+#     | Parameters
+#     ---------------------------------------------------
+#     * n_iter: 100
+#     * sampling_size: 92
+#     * random_state: 0
+#     * with_replacement: False
+#     * transformation: None
+#     * memory: 16.156 KB
+#     ---------------------------------------------------
+#     | Data
+#     ---------------------------------------------------
+#     * Features (n=150, m=4, memory=10.859 KB)
+#     * Ensemble (memory=4.812 KB)
+#     * Statistics (['mean', 'var', 'kurtosis', 'skew', 'normaltest|stat', 'normaltest|p_value'], memory=496 B)
+
+# View ensemble
+print(ens.ensemble_.head())
+# Edges       (sepal_width, sepal_length)  (sepal_length, petal_length)  \
+# Iterations                                                              
+# 0                             -0.113835                      0.880407   
+# 1                             -0.243982                      0.883397   
+# 2                             -0.108511                      0.868627   
+# 3                             -0.151437                      0.879405   
+# 4                             -0.241807                      0.869027  
+
+# View statistics
+print(ens.stats_.head())
+# Statistics                        mean       var  kurtosis      skew  \
+# Edges                                                                  
+# (sepal_width, sepal_length)  -0.167746  0.002831  0.191176  0.287166   
+# (sepal_length, petal_length)  0.880692  0.000268 -0.107437  0.235619   
+# (petal_width, sepal_length)   0.834140  0.000442 -0.275487 -0.219778   
+# (sepal_width, petal_length)  -0.304403  0.003472 -0.363377  0.059179   
+# (sepal_width, petal_width)   -0.285237  0.003466 -0.606118  0.264103 
+
+```
+
+##### Simple case of creating sample-specific perturbation networks
 
 
-#### Development:
-*Soothsayer* is in a developmental stage.  If you're not sure if your installation is a developmental version, check by running: `import soothsayer as sy; print(sy.__developmental__)`.  It is *highly recommended* to [update to the current version](https://github.com/jolespin/soothsayer/tree/master/install#update-to-the-current-release-recommended). 
+```python
+# Create ensemble network
+sspn_rho = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+sspn_rho.fit(X=X, y=y, metric="rho", reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], copy_ensemble=True)
 
-If you are interested in requesting features or wish to report a bug, please post a GitHub issue prefixed with the tag `[Feature Request]` and `[Bug]`, respectively.
+print(sspn_rho)
+# ============================================================================
+# SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: rho)
+# ============================================================================
+#     * Number of nodes (leaf measurement): 4
+#     * Number of edges (association): 6
+#     * Observation type: specimen
+#     ------------------------------------------------------------------------
+#     | Parameters
+#     ------------------------------------------------------------------------
+#     * n_iter: 100
+#     * sampling_size: 30
+#     * random_state: 0
+#     * with_replacement: False
+#     * transformation: None
+#     * memory: 518.875 KB
+#     ------------------------------------------------------------------------
+#     | Data
+#     ------------------------------------------------------------------------
+#     * Features (n=150, m=4, memory=10.859 KB)
+#     ------------------------------------------------------------------------
+#     | Intermediate
+#     ------------------------------------------------------------------------
+#     * Reference Ensemble (memory=208 B)
+#     * Sample-specific Ensembles (memory=20.312 KB)
+#     ------------------------------------------------------------------------
+#     | Terminal
+#     ------------------------------------------------------------------------
+#     * Ensemble (memory=468.750 KB)
+#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
 
-_________________________________
+# View ensemble
+print(*repr(sspn_rho.ensemble_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+
+# View statistics
+print(*repr(sspn_rho.stats_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+# View SSPN for a particular sample
+graph = sspn_rho.to_networkx("iris_50")
+list(graph.edges(data=True))[0]
+# ('sepal_width',
+#  'sepal_length',
+#  {'mean': 0.04004398613232575,
+#   'var': 0.0011399047127054046,
+#   'normaltest|stat': 6.063925790957182,
+#   'normaltest|p_value': 0.04822089259665142})
+
+```
+
+##### Create a SSPN using a custom association function
+
+```python
+# Custom association function
+def inverse_kullbackleibler(a,b, base=2):
+    return 1/stats.entropy(pk=a, qk=b, base=base)
+
+# Create ensemble network
+sspn_kl = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+sspn_kl.fit(X=X, y=y, metric=inverse_kullbackleibler, reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], function_is_pairwise=False, copy_ensemble=True)
+
+print(sspn_kl)
+# ================================================================================================
+# SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: inverse_kullbackleibler)
+# ================================================================================================
+#     * Number of nodes (leaf measurement): 4
+#     * Number of edges (association): 6
+#     * Observation type: specimen
+#     --------------------------------------------------------------------------------------------
+#     | Parameters
+#     --------------------------------------------------------------------------------------------
+#     * n_iter: 100
+#     * sampling_size: 30
+#     * random_state: 0
+#     * with_replacement: False
+#     * transformation: None
+#     * memory: 518.875 KB
+#     --------------------------------------------------------------------------------------------
+#     | Data
+#     --------------------------------------------------------------------------------------------
+#     * Features (n=150, m=4, memory=10.859 KB)
+#     --------------------------------------------------------------------------------------------
+#     | Intermediate
+#     --------------------------------------------------------------------------------------------
+#     * Reference Ensemble (memory=208 B)
+#     * Sample-specific Ensembles (memory=20.312 KB)
+#     --------------------------------------------------------------------------------------------
+#     | Terminal
+#     --------------------------------------------------------------------------------------------
+#     * Ensemble (memory=468.750 KB)
+#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
+
+# View ensemble
+print(*repr(sspn_kl.ensemble_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 9
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+
+# View statistics
+print(*repr(sspn_kl.stats_).split("\n")[-4:], sep="\n")
+# Coordinates:
+#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
+#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+# View SSPN for a particular sample
+graph = sspn_kl.to_networkx("iris_50")
+list(graph.edges(data=True))[0]
+# ('sepal_width',
+#  'sepal_length',
+#  {'mean': -130.40664983969182,
+#   'var': 2083.5807070609085,
+#   'normaltest|stat': 15.2616635290025,
+#   'normaltest|p_value': 0.00048525707083011354})
+```
+
+##### Feature engineering using categories
+```python
+from soothsayer_utils import get_iris_data
+from scipy import stats
+import pandas as pd
+import ensemble_networkx as enx
+
+X, y = get_iris_data(["X","y"])
+# Usage
+CEF = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
+
+# Add categories
+category_1 = pd.Series(X.columns.map(lambda x:x.split("_")[0]), X.columns)
+CEF.add_category(
+    name_category="leaf_type", 
+    mapping=category_1,
+)
+# Optionally add scaling factors, statistical tests, and summary statistics
+# Compile all of the data
+CEF.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
+# Unpacking engineered groups: 100%|██████████| 1/1 [00:00<00:00, 2974.68it/s]
+# Organizing feature sets: 100%|██████████| 4/4 [00:00<00:00, 17403.75it/s]
+# Compiling synopsis [Basic Feature Info]: 100%|██████████| 2/2 [00:00<00:00, 32768.00it/s]
+# Compiling synopsis [Scaling Factor Info]: 100%|██████████| 2/2 [00:00<00:00, 238.84it/s]
+
+# View the engineered features
+CEF.synopsis_
+#   initial_features        number_of_features      leaf_type(level:0)      scaling_factors sum(scaling_factors)    mean(scaling_factors)   sem(scaling_factors)    std(scaling_factors)
+# leaf_type                                                         
+# sepal     [sepal_width, sepal_length]     2       sepal   [458.6, 876.5]  1335.1  667.55  208.95  208.95
+# petal     [petal_length, petal_width]     2       petal   [563.7, 179.90000000000003]     743.6   371.8   191.9   191.9
+
+# Transform a dataset using the defined categories
+CEF.fit_transform(X, aggregate_fn=np.sum)
+# leaf_type sepal   petal
+# sample            
+# iris_0    8.6     1.6
+# iris_1    7.9     1.6
+# iris_2    7.9     1.5
+# iris_3    7.7     1.7
+```
 
 
-#### `Soothsayer` in the wild:
-_________________________________
-* Espinoza JL+, Dupont CL+, O’Rourke A, Beyhan S, Morales P, et al. (2021) Predicting antimicrobial mechanism-of-action from transcriptomes: A generalizable explainable artificial intelligence approach. PLOS Computational Biology 17(3): e1008857. [doi:10.1371/journal.pcbi.1008857](https://doi.org/10.1371/journal.pcbi.1008857)
-
-
-* Yu Imai, Kirsten J. Meyer, Akira Iinishi, Quentin Favre-Godal, Robert Green, Sylvie Manuse, Mariaelena Caboni, Miho Mori, Samantha Niles, Meghan Ghiglieri, Chandrashekhar Honrao, Xiaoyu Ma, Jason Guo, Alexandros Makriyannis, Luis Linares-Otoya, Nils Böhringer, Zerlina G. Wuisan, Hundeep Kaur, Runrun Wu, Andre Mateus, Athanasios Typas, Mikhail M. Savitski, Josh L. Espinoza, Aubrie O’Rourke, Karen E. Nelson, Sebastian Hiller, Nicholas Noinaj, Till F. Schäberle, Anthony D’Onofrio & Kim Lewis. (2019). A new antibiotic selectively kills Gram-negative pathogens. Nature. [doi:10.1038/s41586-019-1791-1](https://www.nature.com/articles/s41586-019-1791-1). 
-
-* Espinoza JL, Shah N, Singh S, Nelson KE, Dupont CL. Applications of weighted association networks applied to compositional data in biology. Environ Microbiol. 2020 May 20;. [doi: 10.1111/1462-2920.15091](https://sfamjournals.onlinelibrary.wiley.com/doi/full/10.1111/1462-2920.15091). PubMed PMID: 32436334.
-
-* Santoro EP, Borges RM, Espinoza JL, Freire M, Messias CSMA, Villela HDM, Pereira LM, Vilela CLS, Rosado JG, Cardoso PM, Rosado PM, Assis JM, Duarte GAS, Perna G, Rosado AS, Macrae A, Dupont CL, Nelson KE, Sweet MJ, Voolstra CR, Peixoto RS. Coral microbiome manipulation elicits metabolic and genetic restructuring to mitigate heat stress and evade mortality. Sci Adv. 2021 Aug 13;7(33):eabg3088. [doi: 10.1126/sciadv.abg3088](https://advances.sciencemag.org/content/7/33/eabg3088). PMID: 34389536.
-
-* Nabwera HM+, Espinoza JL+, Worwui A, Betts M, Okoi C, Sesay AK et al. Interactions between fecal gut microbiome, enteric pathogens, and energy regulating hormones among acutely malnourished rural Gambian children. EBioMedicine 2021; 73: 103644. [doi:10.1016/j.ebiom.2021.103644](https://doi.org/10.1016/j.ebiom.2021.103644)
-
-<img src="logo/soothsayer_wide.png" width=200>
 
 
