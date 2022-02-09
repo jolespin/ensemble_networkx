@@ -33,7 +33,7 @@
 # =======
 # Version
 # =======
-__version__= "2021.06.24"
+__version__= "2022.2.9"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -45,9 +45,11 @@ __developmental__ = True
 # =======
 __functions__ = [
     "pairwise_biweight_midcorrelation",
+    "umap_fuzzy_simplical_set_graph",
 ] + [
     "signed",
     "get_weights_from_graph",
+    "get_symmetric_category",
     "dense_to_condensed",
     "condensed_to_dense",
     "convert_network",

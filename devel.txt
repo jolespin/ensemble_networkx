@@ -1,6 +1,17 @@
+Pending: 
+========
+* Create a PerturbationNetwork and make SampleSpecificPerturbationNetwork dependent on the more general PerturbationNetwork.  Adapt this so there can be more than one sample as the query.  
+* Should convert_network actually be convert_symmetric? 
+* Since iGraph is a dependency, just make code cleaner without the workarounds for not having it as a dependency
+
+Completed:
+==========
+* 2022.02.09 - Added support for iGraph and non-fully connected networks. Also added UMAP fuzzy_simplical_set graph
+* 2021.06.24 - Added `get_weights_from_graph` function
 * 2021.06.09 - Fixed `condensed_to_dense` ability to handle self interactions
 * 2021.04.21 - Fixed `idx_nodes = pd.Index(sorted(set(groups[lambda x: x == group].index) & set(df_dense.index)))` in `connectivity` function to prepare for pandas deprecation.
 * 2021.04.12 - Added `community_detection` wrapper for `python-louvain` and `leidenalg`.  Changed `cluster_modularity` function to `cluster_homogeneity` to not be confused with `modularity` metric used for louvain algorithm.
 * 2021.03.09 - Large changes took place in this version.  Removed dependency of HiveNetworkX and moved many non-Hive plot functions/classes to EnsembleNetworkX.  Now HiveNetworkX depends on EnsembleNetworkX which will be the more generalizable extension to NetworkX in the Soothsayer ecosystem while maintaining HiveNetworkX's core object on Hive plots. This version has also incorporated a feature engineering class called `CategoricalEngineeredFeature` that is a generalizable replacement to Soothsayer's PhylogenomicFunctionalComponent (which is being deprecated).
 * 2020.07.24 - Added `DifferentialEnsembleAssociationNetwork`
 * 2020.07.21 - `SampleSpecificPerturbationNetwork` fit method returns self
+

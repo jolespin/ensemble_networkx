@@ -41,6 +41,13 @@ def signed(X):
     """
     return (X + 1)/2
 
+# ===================s
+# Transformations
+# ===================
+
+
+
+
 # ===================
 # Converting Networks
 # ===================
@@ -54,9 +61,9 @@ def get_weights_from_graph(graph, into=np.asarray, weight="weight",  generator=F
         return into(weights)
         
 # pd.DataFrame 2D to pd.Series
-def dense_to_condensed(X, name=None, assert_symmetry=True, tol=None):
+def dense_to_condensed(X, name=None, assert_symmetry=True, tol=None, nans_ok=True):
     if assert_symmetry:
-        assert is_symmetrical(X, tol=tol), "`X` is not symmetric with tol=`{}`".format(tol)
+        assert is_symmetrical(X, tol=tol, nans_ok=nans_ok), "`X` is not symmetric with tol=`{}` or try with `nans_ok=True`".format(tol)
     labels = X.index
     index=pd.Index(list(map(frozenset, combinations(labels, 2))), name=name)
     data = squareform(X, checks=False)
@@ -98,7 +105,28 @@ def condensed_to_dense(y:pd.Series, fill_diagonal="infer", index=None):
         index = df_dense.index
     return df_dense.loc[index,index]
 
-# Convert networks
+# Get symmetric category
+def get_symmetric_category(obj):
+        if type(obj) is type:
+            string_representation = str(obj)
+        else:
+            string_representation = str(type(obj))
+        class_type = string_representation.split("'")[1]
+        fields = class_type.split(".")
+        module = fields[0]
+        category = None
+        if fields[-1] == "Symmetric":
+            category = "Symmetric"
+        if module == "pandas":
+            if fields[-1] == "Series":
+                category = ("pandas", "Series")
+            if fields[-1] == "DataFrame":
+                category = ("pandas", "DataFrame")
+        if module in  {"networkx", "igraph"}:
+            category = module
+        assert category is not None, "`data` must be either a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
+        return category
+    
 def convert_network(data, into, index=None, assert_symmetry=True, tol=1e-10, **attrs):
     """
     Convert to and from the following network structures:
@@ -106,22 +134,35 @@ def convert_network(data, into, index=None, assert_symmetry=True, tol=1e-10, **a
         * pd.Series (index must be frozenset of {node_a, node_b})
         * Symmetric
         * nx.[Di|Ordered]Graph
-    """
-    assert isinstance(data, (pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)), "`data` must be {pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
+        * ig.Graph
 
-    assert into in (pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph), "`into` must be {pd.DataFrame, pd.Series, Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
+    NOTE: This needs to be cleaned up
+    """
+    input_category = get_symmetric_category(data)
+    output_category = get_symmetric_category(into)
+
+    assert output_category in {("pandas", "Series"), ("pandas", "DataFrame"), "Symmetric", "networkx", "igraph"}, "`data` must be either a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
+    assert isinstance(into, type), "`into` must be an instantiated object: a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
     assert into not in {nx.MultiGraph, nx.MultiDiGraph},  "`into` cannot be a `Multi[Di]Graph`"
     
     # self -> self
     if isinstance(data, into):
         return data.copy()
     
+    # HACK and I'm not proud of it...
+    @check_packages(["igraph"])
+    def _to_igraph(data): 
+        return Symmetric(data).to_igraph(**attrs)
+    if output_category == "igraph":
+        return _to_igraph(convert_network(data, into=pd.Series))
+                        
+    # pd.Series --> Symmetric
     if isinstance(data, pd.Series):
         data =  Symmetric(data, **attrs)
         if into == Symmetric:
             return data
     
-    # pd.DataFrame -> Symmetric or Graph
+    # pd.DataFrame -> Symmetric or NetworkX
     if isinstance(data, pd.DataFrame) and (into in {Symmetric, nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}):
         weights = dense_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol)
         if into == Symmetric:
@@ -134,7 +175,7 @@ def convert_network(data, into, index=None, assert_symmetry=True, tol=1e-10, **a
         return dense_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol)
 
         
-    # Symmetric -> pd.DataFrame, pd.Series, or Graph
+    # Symmetric -> pd.DataFrame, pd.Series, or NetworkX
     if isinstance(data, Symmetric):
         # pd.DataFrame
         if into == pd.DataFrame:
@@ -150,7 +191,7 @@ def convert_network(data, into, index=None, assert_symmetry=True, tol=1e-10, **a
         else:
             return data.to_networkx(into=into, **attrs)
         
-    # Graph -> Symmetric
+    # NetworkX -> Symmetric
     if isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)):
         if into == Symmetric:
             return Symmetric(data=data, **attrs)
@@ -158,7 +199,6 @@ def convert_network(data, into, index=None, assert_symmetry=True, tol=1e-10, **a
             return Symmetric(data=data, **attrs).to_dense()
         if into in {nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}:
             return Symmetric(data=data).to_networkx(into=into, **attrs)
-        
         if into == pd.Series:
             return convert_network(data=data, into=Symmetric, index=index, assert_symmetry=assert_symmetry, tol=tol).weights
 
@@ -467,8 +507,168 @@ def cluster_homogeneity(df:pd.DataFrame, edge_type="Edge", iteration_type="Itera
 
 
     return df_pairs[~df_pairs.index.duplicated(keep="first")]
+
+# ==============================================================================
+# Associations and graph constructors
+# ==============================================================================
+@check_packages(["umap"])
+def umap_fuzzy_simplical_set_graph(
+    dism,
+    n_neighbors,
+    into=pd.Series,
+    name=None,
+    node_type=None,
+    edge_type="membership strength of the 1-simplex",
+    random_state=0,
+    set_op_mix_ratio=1.0,
+    local_connectivity=1.0,
+    angular=False,
+    apply_set_operations=True,
+    verbose=False,
+    ):
+    # Imports
+    from umap.umap_ import fuzzy_simplicial_set, nearest_neighbors
+    from scipy.sparse import tril
+    
+    # Checks
+    assert isinstance(dism, (Symmetric, pd.Series, pd.DataFrame)), "`dism` must be a labeled object as either a pandas[pd.DataFrame, pd.Series] or ensemble_networkx[Symmetric]"
+    
+    # Convert dism to pd.DataFrame
+    if not isinstance(dism, pd.DataFrame):
+        dism = convert_network(dism, pd.DataFrame)
+    nodes = dism.index
+    
+    # Compute nearest neighbors
+    knn_indices, knn_dists, rp_forest = nearest_neighbors(
+        X=dism.values, 
+        n_neighbors=n_neighbors, 
+        metric="precomputed", 
+        metric_kwds=None, 
+        angular=angular, 
+        random_state=random_state,
+    )
+
+    # Fuzzy simplical set
+    connectivities, sigmas, rhos = fuzzy_simplicial_set(
+            X=dism.values,
+            n_neighbors=n_neighbors,
+            random_state=random_state, 
+            metric="precomputed",
+            knn_indices=knn_indices,
+            knn_dists=knn_dists,
+            angular=angular,
+            set_op_mix_ratio=set_op_mix_ratio,
+            local_connectivity=local_connectivity,
+            apply_set_operations=apply_set_operations,
+            verbose=verbose,
+            return_dists=None,
+        )
+    
+    # Get non-zero edge weights and construct graph as a pd.Series with frozenset edges
+    index_sources, index_targets = tril(connectivities).nonzero()
+    weights = np.asarray(connectivities[index_sources,index_targets]).ravel()
+    data = pd.Series( 
+            data = np.asarray(connectivities[index_sources,index_targets]).ravel(),
+            index = map(frozenset, zip(nodes[index_sources], nodes[index_targets])),
+            name=name,
+    )
+
+    if into == pd.Series:
+        return data
+    else:
+        # Get symmetric object
+        network = Symmetric(data=data, association="network", assert_symmetry=False, remove_missing_values=True, name=name, node_type=node_type, edge_type=edge_type)
+        
+        if into == Symmetric:
+            return network
+        else:
+            return convert_network(network, into)
+        
+# Biweight midcorrelation
+def pairwise_biweight_midcorrelation(X, use_numba=False):
+    """
+    X: {np.array, pd.DataFrame}
+
+    Code adapted from the following sources:
+        * https://stackoverflow.com/questions/61090539/how-can-i-use-broadcasting-with-numpy-to-speed-up-this-correlation-calculation/61219867#61219867
+        * https://github.com/olgabot/pandas/blob/e8caf4c09e1a505eb3c88b475bc44d9389956585/pandas/core/nanops.py
+
+    Special thanks to the following people:
+        * @norok2 (https://stackoverflow.com/users/5218354/norok2) for optimization (vectorization and numba)
+        * @olgabot (https://github.com/olgabot) for NumPy implementation
+
+    Benchmarking:
+        * iris_features (4,4)
+            * numba: 159 ms ± 2.85 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
+            * numpy: 276 µs ± 3.45 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
+        * iris_samples: (150,150)
+            * numba: 150 ms ± 7.57 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
+            * numpy: 686 µs ± 18.8 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
+
+    Future:
+        * Handle missing values
+
+    """
+    # Data
+    result = None
+    labels = None
+    if isinstance(X, pd.DataFrame):
+        labels = X.columns
+        X = X.values
+
+    def _base_computation(A):
+        n, m = A.shape
+        A = A - np.median(A, axis=0, keepdims=True)
+        v = 1 - (A / (9 * np.median(np.abs(A), axis=0, keepdims=True))) ** 2
+        est = A * v ** 2 * (v > 0)
+        norms = np.sqrt(np.sum(est ** 2, axis=0))
+        return n, m, est, norms
+
+    # Check if numba is available
+    assert_acceptable_arguments(use_numba, {True, False, "infer"})
+    if use_numba == "infer":
+        if "numba" in sys.modules:
+            use_numba = True
+        else:
+            use_numba = False
+        print("Numba is available:", use_numba, file=sys.stderr)
+
+    # Compute using numba
+    if use_numba:
+        assert "numba" in sys.modules
+        from numba import jit
+
+        def _biweight_midcorrelation_numba(A):
+            @jit
+            def _condensed_to_dense(n, m, est, norms, result):
+                for i in range(m):
+                    for j in range(i + 1, m):
+                        x = 0
+                        for k in range(n):
+                            x += est[k, i] * est[k, j]
+                        result[i, j] = result[j, i] = x / norms[i] / norms[j]
+            n, m, est, norms = _base_computation(A)
+            result = np.empty((m, m))
+            np.fill_diagonal(result, 1.0)
+            _condensed_to_dense(n, m, est, norms, result)
+            return result
+
+        result = _biweight_midcorrelation_numba(X)
+    # Compute using numpy
+    else:
+        def _biweight_midcorrelation_numpy(A):
+            n, m, est, norms = _base_computation(A)
+            return np.einsum('mi,mj->ij', est, est) / norms[:, None] / norms[None, :]
+        result = _biweight_midcorrelation_numpy(X)
+
+    # Add labels
+    if labels is not None:
+        result = pd.DataFrame(result, index=labels, columns=labels)
+
+    return result
+
 # =======================================================
-# Data Structures
+# Classes
 # =======================================================
 # Symmetrical dataframes represented as augment pd.Series
 class Symmetric(object):
@@ -518,9 +718,13 @@ class Symmetric(object):
     #     (iris_147, iris_148)    0.995708
     #     (iris_149, iris_147)    0.994460
     #     (iris_149, iris_148)    0.999916
-
+    =====
     devel
     =====
+    2022-Feb-08
+    * Added support for iGraph
+    * Added support for non-fully-connected graphs
+    
     2020-June-23
     * Replace self._dense_to_condensed to dense_to_condensed
     * Dropped math operations
@@ -533,7 +737,8 @@ class Symmetric(object):
     
 
     Future:
-    * Use `weights` instead of `data`
+    * Add support for non-fully-connected networks
+    * Add suport for iGraph
     
     Dropped:
     Fix the diagonal arithmetic
@@ -546,11 +751,17 @@ class Symmetric(object):
         edge_type=None, 
         func_metric=None,  
         association="infer", 
-        assert_symmetry=True, 
-        nans_ok=True, 
-        tol=None, 
-        # fillna=np.nan,
         acceptable_associations={"similarity", "dissimilarity", "statistical_test", "network", "infer", None}, 
+        
+        # Symmetry
+        assert_symmetry=True, 
+        tol=None, 
+
+        # Missing values
+        remove_missing_values=True,
+        fill_missing_values_with=np.nan,
+        nans_ok=True, 
+        
         **attrs,
         ):
         
@@ -563,19 +774,31 @@ class Symmetric(object):
         self.association = association
         self.diagonal = None
         self.metadata = dict()
-
+        
+        # Missing values
+        self.remove_missing_values=remove_missing_values
+        self.fill_missing_values_with=fill_missing_values_with
+        self.nans_ok=nans_ok
+        
+        # Get input type
+        input_category = get_symmetric_category(data)
+        
         # From Symmetric object
-        if isinstance(data, type(self)):
+        if input_category == "Symmetric":
             if not nans_ok:
                 assert not np.any(data.weights.isnull()), "Cannot move forward with missing values"
             self._from_symmetric(data=data, name=name, node_type=node_type, edge_type=edge_type, func_metric=func_metric, association=association)
                 
         # From networkx
-        if isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)):
+        if input_category == "networkx":
             self._from_networkx(data=data, association=association)
+            
+        # From igraph
+        if input_category == "igraph":
+            self._from_igraph(data=data, association=association)
         
         # From pandas
-        if isinstance(data, (pd.DataFrame, pd.Series)):
+        if input_category in [("pandas", "Series"), ("pandas", "DataFrame")]:
             if not nans_ok:
                 assert not np.any(data.isnull()), "Cannot move forward with missing values"
             # From pd.DataFrame object
@@ -604,6 +827,7 @@ class Symmetric(object):
     # =======
     # Utility
     # =======
+    
     def _infer_association(self, X):
         diagonal = np.diagonal(X)
         diagonal_elements = set(diagonal)
@@ -635,7 +859,7 @@ class Symmetric(object):
                 self.association = association
             
     def _from_networkx(self, data, association):
-        assert isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)), "`If data` is a graph, it must be in {nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
+        # assert isinstance(data, (nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph)), "`If data` is a graph, it must be in {nx.Graph, nx.OrderedGraph, nx.DiGraph, nx.OrderedDiGraph}"
         assert_acceptable_arguments(association, self._acceptable_associations)
         if association == "infer":
             if association is None:
@@ -659,7 +883,32 @@ class Symmetric(object):
         data = pd.Series(edge_weights)
         self._from_pandas_series(data=data, association=association)
         
-            
+    def _from_igraph(self, data, association):
+        if data.is_directed():
+            warnings.warn("Currently `Symmetric` objects cannot handle directed graphs and will force into undirected configuration")
+        # assert isinstance(data, (ig.Graph)), "`If data` is a graph, it must be in {ig.Graph}"
+        assert_acceptable_arguments(association, self._acceptable_associations)
+        if association == "infer":
+            if association is None:
+                association = "network"
+        assert_acceptable_arguments(association, self._acceptable_associations)
+        
+        
+        # Propogate information from graph
+        for attr in ["name", "node_type", "edge_type", "func_metric"]:
+            if getattr(self, attr) is None:
+                try: 
+                    setattr(self, attr, getattr(data, attr))
+                except (KeyError, AttributeError):
+                    pass
+         # Weights
+        weights = data.es["weight"]
+        nodes = np.asarray(g.vs["name"])
+        edges = list(map(lambda edge_indicies: frozenset(nodes[list(edge_indicies)]), data.get_edgelist()))
+        data = pd.Series(weights, index=edges)
+
+        self._from_pandas_series(data=data, association=association)
+        
     def _from_pandas_dataframe(self, data:pd.DataFrame, association, assert_symmetry, nans_ok, tol):
         if assert_symmetry:
             assert is_symmetrical(data, tol=tol), "`X` is not symmetric.  Consider dropping the `tol` to a value such as `1e-10` or using `(X+X.T)/2` to force symmetry"
@@ -680,8 +929,16 @@ class Symmetric(object):
         self.association = association
         # To ensure that the ordering is maintained and this is compatible with methods that use an unlabeled upper triangle, we must reindex and sort
         self.nodes = pd.Index(sorted(frozenset.union(*data.index)))
-        self.edges = pd.Index(map(frozenset, combinations(self.nodes, r=2)), name="Edges")
-        self.weights = pd.Series(data, name="Weights").reindex(self.edges)
+        
+        if self.remove_missing_values:
+            data = data.dropna()
+            self.edges = pd.Index(data.index, name="Edges")
+            self.weights = pd.Series(data, name="Weights")
+        else:
+            self.edges = pd.Index(map(frozenset, combinations(self.nodes, r=2)), name="Edges")
+            self.weights = pd.Series(data, name="Weights").reindex(self.edges)
+            if pd.notnull(self.fill_missing_values_with):
+                self.weights = self.weights.fillna(self.fill_missing_values_with)
         
     def set_diagonal(self, diagonal):
         if diagonal is None:
@@ -794,9 +1051,22 @@ class Symmetric(object):
         if index is None:
             index = self.nodes
         return condensed_to_dense(y=self.weights, fill_diagonal=fill_diagonal, index=index)
+    
+    def to_pandas_dataframe(self, index=None, fill_diagonal=None, vertical=False):
+        df = self.to_dense(index=index, fill_diagonal=fill_diagonal)
+        if not vertical:
+            return df
+        else:
+            df = df.stack().to_frame().reset_index()
+            df.columns = ["Node_A", "Node_B", "Weight"]
+            df.index.name = "Edge_Index"
+        return df
 
     def to_condensed(self):
         return self.weights
+                                     
+    def to_pandas_series(self):
+        return self.to_condensed()
 
 #     @check_packages(["ete3", "skbio"])
 #     def to_tree(self, method="average", into=None, node_prefix="y"):
@@ -818,8 +1088,21 @@ class Symmetric(object):
         metadata = { "node_type":self.node_type, "edge_type":self.edge_type, "func_metric":self.func_metric}
         metadata.update(attrs)
         graph = into(name=self.name, **metadata)
+
         for (node_A, node_B), weight in self.weights.iteritems():
             graph.add_edge(node_A, node_B, weight=weight)
+        return graph
+    
+    @check_packages(["igraph"])
+    def to_igraph(self, directed=False, **attrs):
+        from igraph import Graph
+        graph = Graph(directed=directed)
+        graph.add_vertices(self.nodes)  # this adds adjacency.shape[0] vertices
+        graph.add_edges(self.edges.map(tuple))
+        graph.es['weight'] = self.weights.values
+        
+        for k, v in { "node_type":self.node_type, "edge_type":self.edge_type, "func_metric":self.func_metric}.items():
+            graph[k] = v
         return graph
     
     def to_file(self, path, **kwargs):
@@ -828,91 +1111,7 @@ class Symmetric(object):
     def copy(self):
         return copy.deepcopy(self)
 
-# ==============================================================================
-# Associations
-# ==============================================================================
-# Biweight midcorrelation
-def pairwise_biweight_midcorrelation(X, use_numba=False):
-    """
-    X: {np.array, pd.DataFrame}
 
-    Code adapted from the following sources:
-        * https://stackoverflow.com/questions/61090539/how-can-i-use-broadcasting-with-numpy-to-speed-up-this-correlation-calculation/61219867#61219867
-        * https://github.com/olgabot/pandas/blob/e8caf4c09e1a505eb3c88b475bc44d9389956585/pandas/core/nanops.py
-
-    Special thanks to the following people:
-        * @norok2 (https://stackoverflow.com/users/5218354/norok2) for optimization (vectorization and numba)
-        * @olgabot (https://github.com/olgabot) for NumPy implementation
-
-    Benchmarking:
-        * iris_features (4,4)
-            * numba: 159 ms ± 2.85 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
-            * numpy: 276 µs ± 3.45 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
-        * iris_samples: (150,150)
-            * numba: 150 ms ± 7.57 ms per loop (mean ± std. dev. of 7 runs, 10 loops each)
-            * numpy: 686 µs ± 18.8 µs per loop (mean ± std. dev. of 7 runs, 1000 loops each)
-
-    Future:
-        * Handle missing values
-
-    """
-    # Data
-    result = None
-    labels = None
-    if isinstance(X, pd.DataFrame):
-        labels = X.columns
-        X = X.values
-
-    def _base_computation(A):
-        n, m = A.shape
-        A = A - np.median(A, axis=0, keepdims=True)
-        v = 1 - (A / (9 * np.median(np.abs(A), axis=0, keepdims=True))) ** 2
-        est = A * v ** 2 * (v > 0)
-        norms = np.sqrt(np.sum(est ** 2, axis=0))
-        return n, m, est, norms
-
-    # Check if numba is available
-    assert_acceptable_arguments(use_numba, {True, False, "infer"})
-    if use_numba == "infer":
-        if "numba" in sys.modules:
-            use_numba = True
-        else:
-            use_numba = False
-        print("Numba is available:", use_numba, file=sys.stderr)
-
-    # Compute using numba
-    if use_numba:
-        assert "numba" in sys.modules
-        from numba import jit
-
-        def _biweight_midcorrelation_numba(A):
-            @jit
-            def _condensed_to_dense(n, m, est, norms, result):
-                for i in range(m):
-                    for j in range(i + 1, m):
-                        x = 0
-                        for k in range(n):
-                            x += est[k, i] * est[k, j]
-                        result[i, j] = result[j, i] = x / norms[i] / norms[j]
-            n, m, est, norms = _base_computation(A)
-            result = np.empty((m, m))
-            np.fill_diagonal(result, 1.0)
-            _condensed_to_dense(n, m, est, norms, result)
-            return result
-
-        result = _biweight_midcorrelation_numba(X)
-    # Compute using numpy
-    else:
-        def _biweight_midcorrelation_numpy(A):
-            n, m, est, norms = _base_computation(A)
-            return np.einsum('mi,mj->ij', est, est) / norms[:, None] / norms[None, :]
-        result = _biweight_midcorrelation_numpy(X)
-
-    # Add labels
-    if labels is not None:
-        result = pd.DataFrame(result, index=labels, columns=labels)
-
-    return result
 
 # =============================
 # Feature Engineering
