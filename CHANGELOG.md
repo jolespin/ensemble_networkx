@@ -1,12 +1,8 @@
-Pending: 
-========
-* Create a PerturbationNetwork and make SampleSpecificPerturbationNetwork dependent on the more general PerturbationNetwork.  Adapt this so there can be more than one sample as the query.  
-* Should convert_network actually be convert_symmetric? 
-* Since iGraph is a dependency, just make code cleaner without the workarounds for not having it as a dependency
 
-Completed:
-==========
-* 2022.02.09 - Added support for iGraph and non-fully connected networks. Also added UMAP fuzzy_simplical_set graph
+
+#### Completed:
+* 2023.07.18 - Fixed issue with `SampleSpecificPerturbationNetwork` not being able to handle `X.index` with a `.name` that was not `NoneType`.  Created a hack to allow `pd.MultiIndex` support (converts to strings and warns). Made `include_reference_for_samplespecific=True` the new default which creates a clone of the reference and uses that as the background network.  Added `is_square` to `Symmetric` object.
+* 2022.02.09 - Added support for iGraph and non-fully connected networks. Also added UMAP `fuzzy_simplical_set` graph
 * 2021.06.24 - Added `get_weights_from_graph` function
 * 2021.06.09 - Fixed `condensed_to_dense` ability to handle self interactions
 * 2021.04.21 - Fixed `idx_nodes = pd.Index(sorted(set(groups[lambda x: x == group].index) & set(df_dense.index)))` in `connectivity` function to prepare for pandas deprecation.
@@ -15,3 +11,8 @@ Completed:
 * 2020.07.24 - Added `DifferentialEnsembleAssociationNetwork`
 * 2020.07.21 - `SampleSpecificPerturbationNetwork` fit method returns self
 
+
+#### Pending:  
+* Rename `Symmetric` object to something more generalizable to similarity and dissimilarity matrices that do not have to be symmetric or completely connected.
+* Should `convert_network` actually be `convert_symmetric`? 
+* Since iGraph is a dependency, just make code cleaner without the workarounds for not having it as a dependency

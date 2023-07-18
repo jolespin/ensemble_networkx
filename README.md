@@ -22,9 +22,10 @@ Compatible for Python 3.
 
 #### Install:
 ```
-# "Stable" release (still developmental)
+# Stable release (Preferred)
 pip install ensemble_networkx
-# Current release
+
+# Current developmental release
 pip install git+https://github.com/jolespin/ensemble_networkx
 ```
 
@@ -45,7 +46,7 @@ import ensemble_networkx as enx
 ```python
 # Load in data
 import soothsayer_utils as syu
-X = syu.get_iris_data(["X"])
+X,y = syu.get_iris_data(["X", "y"])
 
 # Create ensemble network
 ens = enx.EnsembleAssociationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
