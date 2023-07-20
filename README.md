@@ -5,13 +5,13 @@ High-level [Ensemble](https://en.wikipedia.org/wiki/Ensemble_averaging_(machine_
 #### Dependencies:
 Compatible for Python 3.
 
-    pandas >= 1
+    panda
     numpy
-    scipy >= 1
-    networkx >= 2
-    matplotlib >= 3
-    soothsayer_utils >= 2021.03.08
-    compositional >= 2020.05.19
+    scipy
+    networkx
+    matplotlib
+    soothsayer_utils
+    compositional
     
 #### Citations (Debut):
    
@@ -96,7 +96,46 @@ print(ens.stats_.head())
 
 ```
 
-##### Simple case of creating sample-specific perturbation networks
+##### Simple case of an ensemble network for binary data using Mathew's Correlation Coefficient (MCC)
+
+```
+# Create ensemble network using MCC for binary data
+n,m = 1000, 100
+X_binary = pd.DataFrame(
+    data=np.random.RandomState(0).choice([0,1], size=(n,m)),
+    index=map(lambda i: f"sample_{i}", range(n)),
+    columns=map(lambda j:f"feature_{j}", range(m)),
+)
+ens_binary = enx.EnsembleAssociationNetwork(name="Binary", edge_type="association")
+ens_binary.fit(X=X_binary, metric="mcc",  n_iter=100, stats_summary=[np.mean,np.var], copy_ensemble=True)
+print(ens_binary)
+
+# ====================================================
+# EnsembleAssociationNetwork(Name:Binary, Metric: mcc)
+# ====================================================
+#     * Number of nodes (None): 100
+#     * Number of edges (association): 4950
+#     * Observation type: None
+#     ------------------------------------------------
+#     | Parameters
+#     ------------------------------------------------
+#     * n_iter: 100
+#     * sampling_size: 618
+#     * random_state: 0
+#     * with_replacement: False
+#     * transformation: None
+#     * memory: 4.894 MB
+#     ------------------------------------------------
+#     | Data
+#     ------------------------------------------------
+#     * Features (n=1000, m=100, memory=821.352 KB)
+#     * Ensemble (memory=3.777 MB)
+#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=322.398 KB)
+```
+
+##### Simple case of creating sample-specific perturbation networks for compositional data using [Rho Proportionality](https://pubmed.ncbi.nlm.nih.gov/26762323/)
+
+Iris data isn't compositional but this is for demonstration since they are positive values.
 
 
 ```python
