@@ -771,6 +771,63 @@ def pairwise_biweight_midcorrelation(X, use_numba=False):
 
     return result
 
+# Matthews correlation coefficient
+def pairwise_mcc(X:pd.DataFrame, check=True):
+    """
+    # Description
+    Returns a correlation table containing Matthews correlation coefficients for a given matrix (np.array or pd.dataframe) of binary, categorical variables.
+    This implementation was created as an alternative to Scikit-Learn's implementation as a measure of dependency reduction.
+
+    # Scikit-Learn implementation of MCC:
+    https://scikit-learn.org/stable/modules/generated/sklearn.metrics.matthews_corrcoef.html
+    
+    # Parameters
+        * X:
+            - NumPy array or Pandas dataframe
+    Output: 
+        pd.DataFrame or np.array of pairwise MCC values
+    """
+    # Checks
+    if check:
+        n_dimensions = len(X.shape)
+        assert n_dimensions in {2}, "`X` must be 2D"
+        assert np.all(X == X.astype(bool)), "`X` must be either dtype boolean or integers[0,1]"
+
+    # Convert input data to a NumPy array
+    # index=None
+    components=None
+    if isinstance(X, pd.DataFrame):
+        # index = X.index
+        features = X.columns
+        X = X.values
+        
+    X = X.astype(bool)
+    
+    # Shape of matrix
+    n,m = X.shape
+
+    # Calculate pairwise MCC values
+    N11 = (X[:, None] & X[:, :, None]).sum(axis=0)
+    N10 = (X[:, None] & ~X[:, :, None]).sum(axis=0)
+    N01 = (~X[:, None] & X[:, :, None]).sum(axis=0)
+    N00 = (~X[:, None] & ~X[:, :, None]).sum(axis=0)
+    denominator = np.sqrt((N11 + N10) * (N11 + N01) * (N00 + N10) * (N00 + N01))
+    denominator[denominator == 0] = 1  # Handle division by zero case
+
+    output = (N11 * N00 - N10 * N01) / denominator
+
+    # Fill the lower triangular part with the symmetric values
+    output[np.tril_indices(m, k=-1)] = output.T[np.tril_indices(m, k=-1)]
+
+    # Set diagonal elements to 1.0
+    np.fill_diagonal(output, 1.0)
+
+    # Return the result as a DataFrame if the input was a DataFrame
+    if features is not None:
+        output = pd.DataFrame(output, index=features, columns=features)
+        
+    return output
+
 # =======================================================
 # Classes
 # =======================================================
@@ -1760,64 +1817,6 @@ class EnsembleAssociationNetwork(object):
             
         for func in (stats_tests + stats_summary):
             assert hasattr(func, "__name__")
-
-        # Implementation of the pairwise Matthews correlation coefficient
-        def pairwise_mcc(X:pd.DataFrame, check=True):
-            """
-            # Description
-            Returns a correlation table containing Matthews correlation coefficients for a given matrix (np.array or pd.dataframe) of binary, categorical variables.
-            This implementation was created as an alternative to Scikit-Learn's implementation as a measure of dependency reduction.
-        
-            # Scikit-Learn implementation of MCC:
-            https://scikit-learn.org/stable/modules/generated/sklearn.metrics.matthews_corrcoef.html
-            
-            # Parameters
-                * X:
-                    - NumPy array or Pandas dataframe
-            Output: 
-                pd.DataFrame or np.array of pairwise MCC values
-            """
-            # Checks
-            if check:
-                n_dimensions = len(X.shape)
-                assert n_dimensions in {2}, "`X` must be 2D"
-                assert np.all(X == X.astype(bool)), "`X` must be either dtype boolean or integers[0,1]"
-        
-            # Convert input data to a NumPy array
-            # index=None
-            components=None
-            if isinstance(X, pd.DataFrame):
-                # index = X.index
-                features = X.columns
-                X = X.values
-                
-            X = X.astype(bool)
-            
-            # Shape of matrix
-            n,m = X.shape
-        
-            # Calculate pairwise MCC values
-            N11 = (X[:, None] & X[:, :, None]).sum(axis=0)
-            N10 = (X[:, None] & ~X[:, :, None]).sum(axis=0)
-            N01 = (~X[:, None] & X[:, :, None]).sum(axis=0)
-            N00 = (~X[:, None] & ~X[:, :, None]).sum(axis=0)
-            denominator = np.sqrt((N11 + N10) * (N11 + N01) * (N00 + N10) * (N00 + N01))
-            denominator[denominator == 0] = 1  # Handle division by zero case
-        
-            output = (N11 * N00 - N10 * N01) / denominator
-        
-            # Fill the lower triangular part with the symmetric values
-            output[np.tril_indices(m, k=-1)] = output.T[np.tril_indices(m, k=-1)]
-        
-            # Set diagonal elements to 1.0
-            np.fill_diagonal(output, 1.0)
-        
-            # Return the result as a DataFrame if the input was a DataFrame
-            if features is not None:
-                output = pd.DataFrame(output, index=features, columns=features)
-                
-            return output
-
             
         # Associations
         ensemble = np.empty((n_iter, number_of_edges))
