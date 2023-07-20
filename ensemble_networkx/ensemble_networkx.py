@@ -772,7 +772,7 @@ def pairwise_biweight_midcorrelation(X, use_numba=False):
     return result
 
 # Matthews correlation coefficient
-def pairwise_mcc(X:pd.DataFrame, check=True):
+def pairwise_mcc(X:pd.DataFrame, checks=True):
     """
     # Description
     Returns a correlation table containing Matthews correlation coefficients for a given matrix (np.array or pd.dataframe) of binary, categorical variables.
@@ -788,7 +788,7 @@ def pairwise_mcc(X:pd.DataFrame, check=True):
         pd.DataFrame or np.array of pairwise MCC values
     """
     # Checks
-    if check:
+    if checks:
         n_dimensions = len(X.shape)
         assert n_dimensions in {2}, "`X` must be 2D"
         assert np.all(X == X.astype(bool)), "`X` must be either dtype boolean or integers[0,1]"
