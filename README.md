@@ -96,9 +96,9 @@ print(ens.stats_.head())
 
 ```
 
-##### Simple case of an ensemble network for binary data using Mathew's Correlation Coefficient (MCC)
+##### Simple case of an ensemble network for binary data using [Mathew's Correlation Coefficient (MCC)](https://en.wikipedia.org/wiki/Phi_coefficient)
 
-```
+```python
 # Create ensemble network using MCC for binary data
 n,m = 1000, 100
 X_binary = pd.DataFrame(
