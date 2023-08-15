@@ -3,7 +3,7 @@
 # =======
 # Version
 # =======
-__version__= "2023.7.20"
+__version__= "2023.8.15"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -19,8 +19,8 @@ __functions__ = [
     "pairwise_mcc",
 ] + [
     "get_symmetric_category",
-    "dense_to_condensed",
-    "condensed_to_dense",
+    "redundant_to_condensed",
+    "condensed_to_redundant",
     "convert_network",
 ] + [
     "connectivity",
@@ -29,7 +29,7 @@ __functions__ = [
     "heterogeneity",
     "topological_overlap_measure",
     "community_detection",
-    "cluster_homogeneity",
+    "edge_cluster_cooccurrence",
 ]
 __classes__ = [
     'EnsembleAssociationNetwork', 
@@ -37,6 +37,8 @@ __classes__ = [
     'DifferentialEnsembleAssociationNetwork', 
     'CategoricalEngineeredFeature',
     'Symmetric',
+    "ClusteredNetwork",
+    # "Network",
     ]
 
 __all__ = sorted(__functions__ + __classes__)
