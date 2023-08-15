@@ -43,68 +43,91 @@ import ensemble_networkx as enx
 
 ##### Simple case of an [iris dataset](https://en.wikipedia.org/wiki/Iris_flower_data_set) ensemble network
 
+Here we randomly sample 100 times, calculate the associations for each draw, and calculate summary statistics for the distributons of association values (i.e., edge weights). 
+
+If you choose `sampling_size` float between `0 < x ≤ 1.0` then the number of samples drawn will be `x * n` where `n` is the number of samples.  If an integer is used then it will grab that number of samples for each draw.
+
+
 ```python
-# Load in data
 import soothsayer_utils as syu
+import numpy as np
+from scipy import stats
+
+# Load in data
 X,y = syu.get_iris_data(["X", "y"])
 
 # Create ensemble network
 ens = enx.EnsembleAssociationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
-ens.fit(X=X, metric="spearman",  n_iter=100, stats_summary=[np.mean,np.var, stats.kurtosis, stats.skew], stats_tests=[stats.normaltest], copy_ensemble=True)
+ens.fit(X=X, metric="pearson",  n_iter=100, sampling_size=1.0, with_replacement=True, stats_summary=[np.median, stats.median_abs_deviation], stats_tests=[stats.normaltest], copy_ensemble=True)
 print(ens)
-# =======================================================
-# EnsembleAssociationNetwork(Name:Iris, Metric: spearman)
-# =======================================================
-#     * Number of nodes (leaf measurement): 4
-#     * Number of edges (association): 6
-#     * Observation type: specimen
-#     ---------------------------------------------------
-#     | Parameters
-#     ---------------------------------------------------
-#     * n_iter: 100
-#     * sampling_size: 92
-#     * random_state: 0
-#     * with_replacement: False
-#     * transformation: None
-#     * memory: 16.156 KB
-#     ---------------------------------------------------
-#     | Data
-#     ---------------------------------------------------
-#     * Features (n=150, m=4, memory=10.859 KB)
-#     * Ensemble (memory=4.812 KB)
-#     * Statistics (['mean', 'var', 'kurtosis', 'skew', 'normaltest|stat', 'normaltest|p_value'], memory=496 B)
 
+======================================================
+EnsembleAssociationNetwork(Name:Iris, Metric: pearson)
+======================================================
+    * Number of nodes (leaf measurement): 4
+    * Number of edges (association): 6
+    * Observation type: specimen
+    --------------------------------------------------
+    | Parameters
+    --------------------------------------------------
+    * n_iter: 100
+    * sampling_size: 150
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 15.238 KB
+    --------------------------------------------------
+    | Data
+    --------------------------------------------------
+    * Features (n=150, m=4, memory=9.930 KB)
+    * Ensemble (memory=4.812 KB)
+    * Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=508 B)
+
+```
+
+Let's look at the "ensemble" which includes all of the associations for each of the permutations.
+```
 # View ensemble
 print(ens.ensemble_.head())
-# Edges       (sepal_width, sepal_length)  (sepal_length, petal_length)  \
-# Iterations                                                              
-# 0                             -0.113835                      0.880407   
-# 1                             -0.243982                      0.883397   
-# 2                             -0.108511                      0.868627   
-# 3                             -0.151437                      0.879405   
-# 4                             -0.241807                      0.869027  
+Edges       (sepal_length, sepal_width)  (petal_length, sepal_length)  \
+Iterations                                                              
+0                             -0.061921                      0.877956   
+1                             -0.096871                      0.868054   
+2                             -0.274915                      0.881042   
+3                             -0.044374                      0.837341   
+4                             -0.010991                      0.887051  
+```
 
+Now let's look at the summary statistics that were calculated for each of the edges:
+
+```
 # View statistics
 print(ens.stats_.head())
-# Statistics                        mean       var  kurtosis      skew  \
-# Edges                                                                  
-# (sepal_width, sepal_length)  -0.167746  0.002831  0.191176  0.287166   
-# (sepal_length, petal_length)  0.880692  0.000268 -0.107437  0.235619   
-# (petal_width, sepal_length)   0.834140  0.000442 -0.275487 -0.219778   
-# (sepal_width, petal_length)  -0.304403  0.003472 -0.363377  0.059179   
-# (sepal_width, petal_width)   -0.285237  0.003466 -0.606118  0.264103 
+
+Statistics                      median  median_abs_deviation    CI(5%)  \
+Edges                                                                    
+(sepal_length, sepal_width)  -0.111914              0.048581 -0.227990   
+(petal_length, sepal_length)  0.872573              0.011590  0.845797   
+(petal_width, sepal_length)   0.814497              0.010882  0.785130   
+(petal_length, sepal_width)  -0.432412              0.036563 -0.522004   
+(petal_width, sepal_width)   -0.370789              0.034571 -0.457290   
+
+Statistics                     CI(95%)  normaltest|stat  normaltest|p_value  
+Edges                                                                        
+(sepal_length, sepal_width)  -0.015495         2.649309            0.265895  
+(petal_length, sepal_length)  0.893086         3.434098            0.179595  
+(petal_width, sepal_length)   0.844199         8.300075            0.015764  
+(petal_length, sepal_width)  -0.327368         5.811593            0.054705  
+(petal_width, sepal_width)   -0.261532        11.567172            0.003078  
+
 
 ```
 
-<<<<<<< Updated upstream
-##### Simple case of an ensemble network for binary data using [Mathew's Correlation Coefficient (MCC)](https://en.wikipedia.org/wiki/Phi_coefficient)
+##### Simple case of an ensemble network for binary data using [Matthew's Correlation Coefficient (MCC)](https://en.wikipedia.org/wiki/Phi_coefficient)
+
+Pearson correlation isn't designed for binary data (i.e., True/False or 0/1) so you can use `MCC` instead.
 
 ```python
-=======
-##### Simple case of an ensemble network for binary data using Mathew's Correlation Coefficient (MCC)
-
-```
->>>>>>> Stashed changes
 # Create ensemble network using MCC for binary data
 n,m = 1000, 100
 X_binary = pd.DataFrame(
@@ -116,105 +139,110 @@ ens_binary = enx.EnsembleAssociationNetwork(name="Binary", edge_type="associatio
 ens_binary.fit(X=X_binary, metric="mcc",  n_iter=100, stats_summary=[np.mean,np.var], copy_ensemble=True)
 print(ens_binary)
 
-# ====================================================
-# EnsembleAssociationNetwork(Name:Binary, Metric: mcc)
-# ====================================================
-#     * Number of nodes (None): 100
-#     * Number of edges (association): 4950
-#     * Observation type: None
-#     ------------------------------------------------
-#     | Parameters
-#     ------------------------------------------------
-#     * n_iter: 100
-#     * sampling_size: 618
-#     * random_state: 0
-#     * with_replacement: False
-#     * transformation: None
-#     * memory: 4.894 MB
-#     ------------------------------------------------
-#     | Data
-#     ------------------------------------------------
-#     * Features (n=1000, m=100, memory=821.352 KB)
-#     * Ensemble (memory=3.777 MB)
-#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=322.398 KB)
+====================================================
+EnsembleAssociationNetwork(Name:Binary, Metric: mcc)
+====================================================
+    * Number of nodes (None): 100
+    * Number of edges (association): 4950
+    * Observation type: None
+    ------------------------------------------------
+    | Parameters
+    ------------------------------------------------
+    * n_iter: 100
+    * sampling_size: 1000
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 4.969 MB
+    ------------------------------------------------
+    | Data
+    ------------------------------------------------
+    * Features (n=1000, m=100, memory=821.352 KB)
+    * Ensemble (memory=3.777 MB)
+    * Statistics (['mean', 'var', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=399.742 KB)
 ```
 
-##### Simple case of creating sample-specific perturbation networks for compositional data using [Rho Proportionality](https://pubmed.ncbi.nlm.nih.gov/26762323/)
+##### Simple case of creating sample-specific perturbation networks for compositional data using [Rho Proportionality](https://pubmed.ncbi.nlm.nih.gov/26762323/) and confidence interval of [2.5, 97.5]
 
-Iris data isn't compositional but this is for demonstration since they are positive values.
+*Iris data is NOT compositional but this is for demonstration since they are positive values.*
+
+Sampling size here is in relation to the `reference` class.  
 
 
 ```python
 # Create ensemble network
 sspn_rho = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
-sspn_rho.fit(X=X, y=y, metric="rho", reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], copy_ensemble=True)
+sspn_rho.fit(X=X, y=y, metric="rho", reference="setosa", n_iter=100, confidence_interval=97.5, copy_ensemble=True)
 
 print(sspn_rho)
-# ============================================================================
-# SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: rho)
-# ============================================================================
-#     * Number of nodes (leaf measurement): 4
-#     * Number of edges (association): 6
-#     * Observation type: specimen
-#     ------------------------------------------------------------------------
-#     | Parameters
-#     ------------------------------------------------------------------------
-#     * n_iter: 100
-#     * sampling_size: 30
-#     * random_state: 0
-#     * with_replacement: False
-#     * transformation: None
-#     * memory: 518.875 KB
-#     ------------------------------------------------------------------------
-#     | Data
-#     ------------------------------------------------------------------------
-#     * Features (n=150, m=4, memory=10.859 KB)
-#     ------------------------------------------------------------------------
-#     | Intermediate
-#     ------------------------------------------------------------------------
-#     * Reference Ensemble (memory=208 B)
-#     * Sample-specific Ensembles (memory=20.312 KB)
-#     ------------------------------------------------------------------------
-#     | Terminal
-#     ------------------------------------------------------------------------
-#     * Ensemble (memory=468.750 KB)
-#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
-# Coordinates:
-#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
-#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
-#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
-# Coordinates:
-#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
-#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
-#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+==============================================================================================
+SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone]), Metric: rho)
+==============================================================================================
+    * Number of nodes (leaf measurement): 4
+    * Number of edges (association): 6
+    * Observation type: specimen
+    ------------------------------------------------------------------------------------------
+    | Parameters
+    ------------------------------------------------------------------------------------------
+    * n_iter: 100
+    * sampling_size: 50
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 787.684 KB
+    ------------------------------------------------------------------------------------------
+    | Data
+    ------------------------------------------------------------------------------------------
+    * Features (n=200, m=4, memory=9.930 KB)
+    ------------------------------------------------------------------------------------------
+    | Intermediate
+    ------------------------------------------------------------------------------------------
+    * Reference Ensemble (memory=220 B)
+    * Sample-specific Ensembles (memory=32.227 KB)
+    ------------------------------------------------------------------------------------------
+    | Terminal
+    ------------------------------------------------------------------------------------------
+    * Ensemble (memory=703.125 KB)
+    * Statistics (['median', 'median_abs_deviation', 'CI(2.5%)', 'CI(97.5%)', 'normaltest|stat', 'normaltest|p_value'], memory=42.188 KB)
+
+    
 
 # View ensemble
 print(*repr(sspn_rho.ensemble_).split("\n")[-4:], sep="\n")
-# Coordinates:
-#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
-#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
-#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
+
+Coordinates:
+  * Samples     (Samples) <U8 'iris_0' 'iris_1' ... 'iris_148' 'iris_149'
+  * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 ... 92 93 94 95 96 97 98 99
+  * Edges       (Edges) object frozenset({'sepal_length', 'sepal_width'}) ......
+  
 
 # View statistics
 print(*repr(sspn_rho.stats_).split("\n")[-4:], sep="\n")
-# Coordinates:
-#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
-#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
-#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
+
+Coordinates:
+  * Samples     (Samples) object 'iris_0' 'iris_1' ... 'iris_148' 'iris_149'
+  * Edges       (Edges) object frozenset({'sepal_length', 'sepal_width'}) ......
+  * Statistics  (Statistics) <U20 'median' ... 'normaltest|p_value'
 
 # View SSPN for a particular sample
 graph = sspn_rho.to_networkx("iris_50")
 list(graph.edges(data=True))[0]
-# ('sepal_width',
-#  'sepal_length',
-#  {'mean': 0.04004398613232575,
-#   'var': 0.0011399047127054046,
-#   'normaltest|stat': 6.063925790957182,
-#   'normaltest|p_value': 0.04822089259665142})
+
+'sepal_length',
+ 'sepal_width',
+ {'median': 0.02589165067420246,
+  'median_abs_deviation': 0.018200489248854534,
+  'CI(2.5%)': -0.01811839255779411,
+  'CI(97.5%)': 0.09388843207188755,
+  'normaltest|stat': 4.196194170296813,
+  'normaltest|p_value': 0.12268967426224149})
 
 ```
 
 ##### Create a SSPN using a custom association function
+
+Here we specify a custom function for the associations which is the inverse kullback leibler divergence.
 
 ```python
 # Custom association function
@@ -223,65 +251,46 @@ def inverse_kullbackleibler(a,b, base=2):
 
 # Create ensemble network
 sspn_kl = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
-sspn_kl.fit(X=X, y=y, metric=inverse_kullbackleibler, reference="setosa", n_iter=100, stats_summary=[np.mean,np.var], function_is_pairwise=False, copy_ensemble=True)
+sspn_kl.fit(X=X, y=y, metric=inverse_kullbackleibler, reference="setosa", n_iter=100, function_is_pairwise=False, copy_ensemble=True)
 
 print(sspn_kl)
-# ================================================================================================
-# SampleSpecificPerturbationNetwork(Name:Iris, Reference: setosa, Metric: inverse_kullbackleibler)
-# ================================================================================================
-#     * Number of nodes (leaf measurement): 4
-#     * Number of edges (association): 6
-#     * Observation type: specimen
-#     --------------------------------------------------------------------------------------------
-#     | Parameters
-#     --------------------------------------------------------------------------------------------
-#     * n_iter: 100
-#     * sampling_size: 30
-#     * random_state: 0
-#     * with_replacement: False
-#     * transformation: None
-#     * memory: 518.875 KB
-#     --------------------------------------------------------------------------------------------
-#     | Data
-#     --------------------------------------------------------------------------------------------
-#     * Features (n=150, m=4, memory=10.859 KB)
-#     --------------------------------------------------------------------------------------------
-#     | Intermediate
-#     --------------------------------------------------------------------------------------------
-#     * Reference Ensemble (memory=208 B)
-#     * Sample-specific Ensembles (memory=20.312 KB)
-#     --------------------------------------------------------------------------------------------
-#     | Terminal
-#     --------------------------------------------------------------------------------------------
-#     * Ensemble (memory=468.750 KB)
-#     * Statistics (['mean', 'var', 'normaltest|stat', 'normaltest|p_value'], memory=18.750 KB)
 
-# View ensemble
-print(*repr(sspn_kl.ensemble_).split("\n")[-4:], sep="\n")
-# Coordinates:
-#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
-#   * Iterations  (Iterations) int64 0 1 2 3 4 5 6 7 8 9
-#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
-
-# View statistics
-print(*repr(sspn_kl.stats_).split("\n")[-4:], sep="\n")
-# Coordinates:
-#   * Samples     (Samples) object 'iris_50' 'iris_51' ... 'iris_148' 'iris_149'
-#   * Edges       (Edges) object frozenset({'sepal_width', 'sepal_length'}) ... frozenset({'petal_width', 'petal_length'})
-#   * Statistics  (Statistics) <U18 'mean' 'var' ... 'normaltest|p_value'
-
-# View SSPN for a particular sample
-graph = sspn_kl.to_networkx("iris_50")
-list(graph.edges(data=True))[0]
-# ('sepal_width',
-#  'sepal_length',
-#  {'mean': -130.40664983969182,
-#   'var': 2083.5807070609085,
-#   'normaltest|stat': 15.2616635290025,
-#   'normaltest|p_value': 0.00048525707083011354})
+==================================================================================================================
+SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone]), Metric: inverse_kullbackleibler)
+==================================================================================================================
+    * Number of nodes (leaf measurement): 4
+    * Number of edges (association): 6
+    * Observation type: specimen
+    --------------------------------------------------------------------------------------------------------------
+    | Parameters
+    --------------------------------------------------------------------------------------------------------------
+    * n_iter: 100
+    * sampling_size: 50
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 787.684 KB
+    --------------------------------------------------------------------------------------------------------------
+    | Data
+    --------------------------------------------------------------------------------------------------------------
+    * Features (n=200, m=4, memory=9.930 KB)
+    --------------------------------------------------------------------------------------------------------------
+    | Intermediate
+    --------------------------------------------------------------------------------------------------------------
+    * Reference Ensemble (memory=220 B)
+    * Sample-specific Ensembles (memory=32.227 KB)
+    --------------------------------------------------------------------------------------------------------------
+    | Terminal
+    --------------------------------------------------------------------------------------------------------------
+    * Ensemble (memory=703.125 KB)
+    * Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=42.188 KB)
 ```
 
 ##### Feature engineering using categories
+
+Let's engineer some categories by collapsing by some predefined category. Check out `Phylogenomic Functional Categories` in [Espinoza et al. 2022](https://academic.oup.com/pnasnexus/article/1/5/pgac239/6762943) for how these are used in practice.
+
+
 ```python
 from soothsayer_utils import get_iris_data
 from scipy import stats
@@ -290,31 +299,31 @@ import ensemble_networkx as enx
 
 X, y = get_iris_data(["X","y"])
 # Usage
-CEF = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
+cef = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
 
 # Add categories
 category_1 = pd.Series(X.columns.map(lambda x:x.split("_")[0]), X.columns)
-CEF.add_category(
+cef.add_category(
     name_category="leaf_type", 
     mapping=category_1,
 )
 # Optionally add scaling factors, statistical tests, and summary statistics
 # Compile all of the data
-CEF.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
+cef.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
 # Unpacking engineered groups: 100%|██████████| 1/1 [00:00<00:00, 2974.68it/s]
 # Organizing feature sets: 100%|██████████| 4/4 [00:00<00:00, 17403.75it/s]
 # Compiling synopsis [Basic Feature Info]: 100%|██████████| 2/2 [00:00<00:00, 32768.00it/s]
 # Compiling synopsis [Scaling Factor Info]: 100%|██████████| 2/2 [00:00<00:00, 238.84it/s]
 
 # View the engineered features
-CEF.synopsis_
+cef.synopsis_
 #   initial_features        number_of_features      leaf_type(level:0)      scaling_factors sum(scaling_factors)    mean(scaling_factors)   sem(scaling_factors)    std(scaling_factors)
 # leaf_type                                                         
 # sepal     [sepal_width, sepal_length]     2       sepal   [458.6, 876.5]  1335.1  667.55  208.95  208.95
 # petal     [petal_length, petal_width]     2       petal   [563.7, 179.90000000000003]     743.6   371.8   191.9   191.9
 
 # Transform a dataset using the defined categories
-CEF.fit_transform(X, aggregate_fn=np.sum)
+cef.fit_transform(X, aggregate_fn=np.sum)
 # leaf_type sepal   petal
 # sample            
 # iris_0    8.6     1.6
@@ -323,6 +332,176 @@ CEF.fit_transform(X, aggregate_fn=np.sum)
 # iris_3    7.7     1.7
 ```
 
+##### Cluster networks using Leiden or Louvain community detection
+We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`)
+
+```
+# Get graph
+graph = enx.convert_network(X.T.corr(), nx.Graph)
+
+# Cluster graph
+cn = enx.ClusteredNetwork(name="Iris", node_type="leaf measurement", edge_type="pearson")
+
+# Fit model
+cn.fit(graph, n_iter=100, algorithm="leiden", minimum_cooccurrence_rate=1.0)
+print(cn)
+
+===========================================
+ClusteredNetwork(Name:Iris, weight_dtype: float64)
+===========================================
+    * Algorithm: leiden
+    * Number of iterations: 100
+    * Minimum edge cooccurrence rate: 1.0
+    * Number of nodes clustered (leaf measurement): 150 (100.00%)
+    * Number of edges clustered (pearson): 6126 (54.82%)
+    ---------------------------------------
+    | Cluster Sizes (N = 2)
+    ---------------------------------------
+    Leiden_1    99
+    Leiden_2    51
+```
+
+Let's take a look at the cluster assignments: 
+
+```
+cn.node_to_cluster_.head()
+
+Nodes[Initial]
+iris_1    Leiden_2
+iris_0    Leiden_2
+iris_2    Leiden_2
+iris_3    Leiden_2
+iris_4    Leiden_2
+Name: Clusters[Expanded], dtype: object
+```
+
+We can also get a cluster to nodes dictionary:
+
+```
+cn.cluster_to_nodes_
+
+Leiden_1    {iris_117, iris_76, iris_59, iris_126,...
+Leiden_2    {iris_0, iris_12, iris_43, iris_4, ...
+Name: Clusters[Collapsed], dtype: object
+```
+
+We can also get the clustered graph in other formats: 
+
+```
+# Default
+graph = cn.graph_clustered_
+
+weights = cn.to_pandas_series()
+
+df_adjacency = cn.to_pandas_dataframe(vertical=False)
+
+df_edgelist = cn.to_pandas_dataframe(vertical=True)
+
+sym = cn.to_symmetric()
+
+```
+
+##### Differential ensemble association networks
+We are going to create a differential between setosa and not-setosa samples.
+
+```
+
+X,y = syu.get_iris_data(["X", "y"])
+y_setosaornot = y.map(lambda x: {True:"setosa", False:"not_setosa"}[x == "setosa"])
+
+# Differential network between setosa and not setosa
+dn = enx.DifferentialEnsembleAssociationNetwork(name="Iris")
+dn.fit(X, y_setosaornot, "setosa", "not_setosa")
+print(dn)
+
+========================================================================================================
+DifferentialEnsembleAssociationNetwork(Name:Iris, Reference: setosa, Treatment: not_setosa, Metric: rho)
+========================================================================================================
+    * Number of nodes (None): 4
+    * Number of edges (None): 6
+    * Observation type: None
+    ----------------------------------------------------------------------------------------------------
+    | Parameters
+    ----------------------------------------------------------------------------------------------------
+    * n_iter: 1000
+    * sampling_size: 50
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 105.539 KB
+    ----------------------------------------------------------------------------------------------------
+    | Data
+    ----------------------------------------------------------------------------------------------------
+    * Features (n=150, m=4, memory=9.930 KB)
+    ----------------------------------------------------------------------------------------------------
+    | Intermediate
+    ----------------------------------------------------------------------------------------------------
+    * Reference Ensemble (memory=47.496 KB)
+    * Treatment Ensemble (memory=47.496 KB)
+    ----------------------------------------------------------------------------------------------------
+    | Terminal
+    ----------------------------------------------------------------------------------------------------
+    * Initial Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'])
+    * Comparative Statistics (['wasserstein_distance', 'mannwhitneyu|stat', 'mannwhitneyu|p_value'], memory=364 B)
+    * Differential Statistics (['median'], memory=268 B)
+
+```
+
+We can look at individual stats for each class: 
+
+```
+dn.ensemble_reference_.stats_
+
+Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
+Edges						
+(sepal_width, sepal_length)	0.786607	0.043967	0.655605	0.866409	125.652750	5.186232e-28
+(petal_length, sepal_length)	0.460913	0.090514	0.236955	0.662517	10.686368	4.780625e-03
+(petal_width, sepal_length)	-0.600863	0.019191	-0.644792	-0.548529	33.238974	6.056873e-08
+(sepal_width, petal_length)	0.261425	0.095604	0.012081	0.483333	11.792565	2.749648e-03
+(sepal_width, petal_width)	-0.599378	0.031315	-0.673050	-0.514876	25.564313	2.810476e-06
+(petal_length, petal_width)	-0.513017	0.033226	-0.592368	-0.425776	7.823623	2.000423e-02
+
+dn.ensemble_treatment_.stats_
+
+Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
+Edges						
+(sepal_width, sepal_length)	0.341311	0.051657	0.217615	0.460566	1.117749	0.571852
+(petal_length, sepal_length)	-0.019897	0.054220	-0.151335	0.109942	0.923136	0.630295
+(petal_width, sepal_length)	-0.781452	0.017277	-0.820192	-0.729637	25.201274	0.000003
+(sepal_width, petal_length)	-0.596316	0.037117	-0.678457	-0.493624	23.866671	0.000007
+(sepal_width, petal_width)	-0.627446	0.027775	-0.687832	-0.555307	11.590521	0.003042
+(petal_length, petal_width)	0.046047	0.043560	-0.063424	0.154860	0.228881	0.891865
+
+```
+
+We can also look stats that compare the distributions of each edge between the 2 conditions: 
+
+```
+dn.stats_comparative_
+
+	wasserstein_distance	mannwhitneyu|stat	mannwhitneyu|p_value
+Edges			
+(sepal_width, sepal_length)	0.434245	999756.0	0.000000e+00
+(petal_length, sepal_length)	0.477957	998548.0	0.000000e+00
+(petal_width, sepal_length)	0.179624	999994.0	0.000000e+00
+(sepal_width, petal_length)	0.851155	1000000.0	0.000000e+00
+(sepal_width, petal_width)	0.028351	675085.0	7.047032e-42
+(petal_length, petal_width)	0.556989	0.0	0.000000e+00
+```
+
+Lastly, we can get the differentials between 2 statistics calculated for each conditions.  We would use this as our resulting differential network: 
 
 
+```
+dn.stats_differential_
+
+	median
+Edges	
+(sepal_width, sepal_length)	-0.445296
+(petal_length, sepal_length)	-0.480810
+(petal_width, sepal_length)	-0.180589
+(sepal_width, petal_length)	-0.857740
+(sepal_width, petal_width)	-0.028068
+(petal_length, petal_width)	0.559064
+```
 

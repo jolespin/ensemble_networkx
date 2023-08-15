@@ -1,6 +1,8 @@
 
 
 #### Completed:
+* 2023.8.15 - Added `ClusteredNetwork` for wrapper around `community_detection` and `edge_cluster_cooccurrence` (formerly known as `cluster_homogeneity`).
+* 2023.8.14 - Changed `dense` to `redundant` to be more consistent with `scikit-bio`.  Added `confidence_interval` to ensemble networks.  Changed default metrics to `np.median` and `stats.median_abs_deviation`.  Changed default `sampling_size` from `0.618...` to `1.0` and `with_replacement=False` to `with_replacement=True`.
 * 2023.7.20 - Added `pairwise_mcc` with Mathew's Correlation Coefficient for binary correlations. Functionality also available in `EnsembleAssociationNetwork` ([@411an13](https://github.com/411an13))
 * 2023.7.18 - Fixed issue with `SampleSpecificPerturbationNetwork` not being able to handle `X.index` with a `.name` that was not `NoneType`.  Created a hack to allow `pd.MultiIndex` support (converts to strings and warns). Made `include_reference_for_samplespecific=True` the new default which creates a clone of the reference and uses that as the background network.  Added `is_square` to `Symmetric` object.
 * 2022.2.9 - Added support for iGraph and non-fully connected networks. Also added UMAP `fuzzy_simplical_set` graph
@@ -14,6 +16,5 @@
 
 
 #### Pending:  
-* Rename `Symmetric` object to something more generalizable to similarity and dissimilarity matrices that do not have to be symmetric or completely connected.
-* Should `convert_network` actually be `convert_symmetric`? 
+* Move arguments in `.fit` to `__init__` to better reflect usage in `scikit-learn`.
 * Since iGraph is a dependency, just make code cleaner without the workarounds for not having it as a dependency

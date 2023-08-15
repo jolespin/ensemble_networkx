@@ -42,16 +42,16 @@ def remove_self_edges(graph):
     return graph.remove_edges_from(self_edges)
 
 # pd.DataFrame 2D to pd.Series
-def dense_to_condensed(X, name=None, assert_symmetry=True, tol=None, nans_ok=True):
+def redundant_to_condensed(X, name=None, assert_symmetry=True, tol=None, nans_ok=True, checks=False):
     if assert_symmetry:
         assert is_symmetrical(X, tol=tol, nans_ok=nans_ok), "`X` is not symmetric with tol=`{}` or try with `nans_ok=True`".format(tol)
     labels = X.index
     index = pd.Index(list(map(frozenset, combinations(labels, 2))), name=name)
-    data = squareform(X, checks=False)
+    data = squareform(X, checks=checks)
     return pd.Series(data, index=index, name=name)
 
 # pd.Series to pd.DataFrame 2D
-def condensed_to_dense(y:pd.Series, fill_diagonal=None, index=None):
+def condensed_to_redundant(y:pd.Series, fill_diagonal=None, index=None):
 
     # Need to optimize this
     data = defaultdict(dict)
@@ -72,10 +72,10 @@ def condensed_to_dense(y:pd.Series, fill_diagonal=None, index=None):
             for node in data:
                 data[node][node] = fill_diagonal
             
-    df_dense = pd.DataFrame(data)
+    df_redundant = pd.DataFrame(data)
     if index is None:
-        index = sorted(df_dense.index)
-    return df_dense.loc[index,index]
+        index = sorted(df_redundant.index)
+    return df_redundant.loc[index,index]
 
 # Get symmetric category
 def get_symmetric_category(obj):
@@ -206,7 +206,7 @@ def convert_network(
         # data = data.stack()
         # data.index = data.index.map(frozenset)
         
-        data = dense_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol, nans_ok=True)
+        data = redundant_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol, nans_ok=True)
         input_category == ("pandas", "Series")
 
     if input_category == "Symmetric":
@@ -257,7 +257,7 @@ def convert_network(
         return data
     
     if output_category == ("pandas", "DataFrame"):
-        return condensed_to_dense(data, fill_diagonal=fill_diagonal)
+        return condensed_to_redundant(data, fill_diagonal=fill_diagonal)
     
     if output_category == "networkx":
         graph = into(**_attrs)
@@ -310,23 +310,23 @@ def connectivity(data, groups:pd.Series=None, remove_self_interactions=True, tol
 #         weights = pd.Series(weights, name="Weights")#.sort_index()
 #         data = Symmetric(weights)
 #     if isinstance(data, Symmetric):
-#         df_dense = condensed_to_dense(data.weights)
+#         df_redundant = condensed_to_redundant(data.weights)
 
 #     if isinstance(data, pd.DataFrame):
 #         assert is_symmetrical(data, tol=tol)
-#         df_dense = data
+#         df_redundant = data
 
     if not isinstance(data, pd.DataFrame):
-        df_dense = convert_network(data=data, into=pd.DataFrame, remove_missing_values=False, remove_self_interactions=False, tol=tol)
+        df_redundant = convert_network(data=data, into=pd.DataFrame, remove_missing_values=False, remove_self_interactions=False, tol=tol)
     else:
         assert is_symmetrical(X=data, tol=tol, nans_ok=True)
-        df_dense = data.copy()
+        df_redundant = data.copy()
         
     if remove_self_interactions:
-        np.fill_diagonal(df_dense.values, 0)
+        np.fill_diagonal(df_redundant.values, 0)
 
     #kTotal
-    k_total = df_dense.sum(axis=1)
+    k_total = df_redundant.sum(axis=1)
     
     if groups is None:
         return k_total
@@ -339,8 +339,8 @@ def connectivity(data, groups:pd.Series=None, remove_self_interactions=True, tol
         #kWithin
         k_within = list()
         for group in groups.unique():
-            index_nodes = pd.Index(sorted(set(groups[lambda x: x == group].index) & set(df_dense.index)))
-            k_group = df_dense.loc[index_nodes,index_nodes].sum(axis=1)
+            index_nodes = pd.Index(sorted(set(groups[lambda x: x == group].index) & set(df_redundant.index)))
+            k_group = df_redundant.loc[index_nodes,index_nodes].sum(axis=1)
             k_within.append(k_group)
         data_connectivity["kWithin"] = pd.concat(k_within)
         
@@ -471,7 +471,7 @@ def topological_overlap_measure(
 # Community Detection
 # =======================================================
 # Graph community detection
-def community_detection(graph, n_iter:int=100, weight:str="weight", random_state:int=0, algorithm="louvain", algo_kws=dict()):
+def community_detection(graph, n_iter:int=100, weight:str="weight", random_state:int=0, algorithm="leiden", algo_kws=dict()):
     assert isinstance(n_iter, int)
     assert isinstance(random_state, int)
     assert isinstance(algorithm, str)
@@ -524,11 +524,11 @@ def community_detection(graph, n_iter:int=100, weight:str="weight", random_state
     # Create DataFrame
     df = pd.DataFrame(partitions)
     df.index.name = "Node"
-    df.columns.name = "Partition"
+    df.columns.name = "Iteration"
     return df
 
-# Cluster homogeneity matrix
-def cluster_homogeneity(df:pd.DataFrame, edge_type="Edge", iteration_type="Iteration"):
+# Cluster cooccurrence matrix
+def edge_cluster_cooccurrence(df:pd.DataFrame, edge_type="Edge", iteration_type="Iteration"):
     """
     # Create Graph
     from soothsayer_utils import get_iris_data
@@ -548,8 +548,8 @@ def cluster_homogeneity(df:pd.DataFrame, edge_type="Edge", iteration_type="Itera
     # iris_3	0	1	1	1	1	0	1	1	1	1
     # iris_4	2	3	3	3	3	2	3	3	3	3
 
-    # Determine cluster homogeneity
-    df_homogeneity = cluster_homogeneity(df_louvain)
+    # Determine cluster cooccurrence
+    df_homogeneity = edge_cluster_cooccurrence(df_louvain)
     df_homogeneity
     # Iteration	0	1	2	3	4	5	6	7	8	9
     # Edge										
@@ -744,7 +744,7 @@ def pairwise_biweight_midcorrelation(X, use_numba=False):
 
         def _biweight_midcorrelation_numba(A):
             @jit
-            def _condensed_to_dense(n, m, est, norms, result):
+            def _condensed_to_redundant(n, m, est, norms, result):
                 for i in range(m):
                     for j in range(i + 1, m):
                         x = 0
@@ -754,7 +754,7 @@ def pairwise_biweight_midcorrelation(X, use_numba=False):
             n, m, est, norms = _base_computation(A)
             result = np.empty((m, m))
             np.fill_diagonal(result, 1.0)
-            _condensed_to_dense(n, m, est, norms, result)
+            _condensed_to_redundant(n, m, est, norms, result)
             return result
 
         result = _biweight_midcorrelation_numba(X)
@@ -890,7 +890,7 @@ class Symmetric(object):
     * Added support for non-fully-connected graphs
     
     2020-June-23
-    * Replace self._dense_to_condensed to dense_to_condensed
+    * Replace self._redundant_to_condensed to redundant_to_condensed
     * Dropped math operations
     * Added input for Symmetric or pd.Series with a frozenset index
 
@@ -976,6 +976,10 @@ class Symmetric(object):
         if (self.edge_type is None) and (self.func_metric is not None):
             self.edge_type = self.func_metric.__name__
         
+        if isinstance(data, pd.DataFrame):
+            if diagonal is None:
+                diagonal = pd.Series(np.diagonal(data), index=data.index)
+
         self.set_diagonal(diagonal)
         self.values = self.weights.values
         self.number_of_nodes = self.nodes.size
@@ -1094,6 +1098,11 @@ class Symmetric(object):
     def entropy(self, base=2):
         assert np.all(self.weights > 0), "All weights must be greater than 0"
         return stats.entropy(self.weights, base=base)
+    def evenness(self):
+        edgeweights_greater_than_zero = self.weights > 0
+        assert np.all(edgeweights_greater_than_zero), "All weights must be greater than 0"
+        number_of_nonzero_edges = np.sum(edgeweights_greater_than_zero)
+        return self.entropy(base=2)/np.log2(number_of_nonzero_edges)
     
     # ==========
     # Network Metrics
@@ -1146,15 +1155,15 @@ class Symmetric(object):
     # ==========
     # Conversion
     # ==========
-    # def to_dense(self, node_subgraph=None, fill_diagonal=None):
+    # def to_redundant(self, node_subgraph=None, fill_diagonal=None):
     #     if fill_diagonal is None:
     #         fill_diagonal = self.diagonal
     #     if node_subgraph is None:
     #         node_subgraph = self.nodes
-    #     return condensed_to_dense(y=self.weights, fill_diagonal=fill_diagonal, index=node_subgraph)
+    #     return condensed_to_redundant(y=self.weights, fill_diagonal=fill_diagonal, index=node_subgraph)
     
     def to_pandas_dataframe(self, node_subgraph=None, edge_subgraph=None, fill_diagonal=None, vertical=False, **convert_network_kws):
-        # df = self.to_dense(node_subgraph=node_subgraph, fill_diagonal=fill_diagonal)
+        # df = self.to_redundant(node_subgraph=node_subgraph, fill_diagonal=fill_diagonal)
         if fill_diagonal is None:
             fill_diagonal = self.diagonal
         if (node_subgraph is None) & (edge_subgraph is None):
@@ -1169,9 +1178,7 @@ class Symmetric(object):
             **convert_network_kws,
         )
             
-        if not vertical:
-            return df
-        else:
+        if vertical:
             df = df.stack().to_frame().reset_index()
             df.columns = ["Node_A", "Node_B", "Weight"]
             df.index.name = "Edge_Index"
@@ -1564,6 +1571,146 @@ class CategoricalEngineeredFeature(object):
         return copy.deepcopy(self)
 
 # =============================
+# Clustered Network
+# =============================
+
+class ClusteredNetwork(object):
+    def __init__(
+        self, 
+        name=None,
+        node_type=None,
+        edge_type=None,
+        ):
+        self.name = name
+        self.node_type = node_type
+        self.edge_type = edge_type
+        self.is_fitted = False
+
+    def fit(
+        self,
+        graph:nx.Graph,
+        algorithm="leiden",
+        n_iter=100,
+        minimum_cooccurrence_rate=1.0,
+        cluster_prefix="auto",
+        random_state=0,
+        weight:str="weight", 
+        algo_kws=dict(),
+        ):
+        if cluster_prefix == "auto":
+            cluster_prefix = "{}_".format(algorithm.capitalize())
+        self.n_iter = n_iter
+        self.algorithm = algorithm
+        self.minimum_cooccurrence_rate = minimum_cooccurrence_rate
+
+        self.graph_initial_ = graph.copy()
+        self.nodes_initial_ = pd.Index(list(self.graph_initial_.nodes()), name="Nodes[Initial]")
+        self.edges_initial_ = pd.Index(list(map(frozenset, self.graph_initial_.edges())), name="Edges[Initial]")
+        self.weighted_initial_ = convert_network(data=self.graph_initial_, into=pd.Series)
+        self.number_of_nodes_initial_ = len(self.nodes_initial_)
+        self.number_of_edges_initial_ = len(self.edges_initial_)
+
+        self.communities_ = community_detection(self.graph_initial_, n_iter=n_iter, algorithm=algorithm, weight=weight, algo_kws=algo_kws)
+        self.cooccurrence_rates_ = edge_cluster_cooccurrence(self.communities_).mean(axis=1)
+
+        edges_after_commmunity_detection = set(self.cooccurrence_rates_[lambda h: h >= self.minimum_cooccurrence_rate].index) & set(self.edges_initial_)
+        self.graph_clustered_ = nx.edge_subgraph(self.graph_initial_, list(map(tuple, edges_after_commmunity_detection)))
+        self.nodes_clustered_ = pd.Index(list(self.graph_clustered_.nodes()), name="Nodes[Clustered]")
+        self.edges_clustered_ = pd.Index(list(map(frozenset, self.graph_clustered_.edges())), name="Edges[Clustered]")
+        self.weights_clustered_ = convert_network(data=self.graph_clustered_, into=pd.Series)
+        self.number_of_nodes_clustered_ = len(self.nodes_clustered_)
+        self.number_of_edges_clustered_ = len(self.edges_clustered_)
+
+
+        # Get clusters
+        self.cluster_to_nodes_ = dict()
+        self.node_to_cluster_ = dict()
+        for i, nodes in enumerate(sorted(nx.connected_components(self.graph_clustered_), key=len, reverse=True), start=1):
+            id_cluster = "{}{}".format(cluster_prefix, i)
+            self.cluster_to_nodes_[id_cluster] = set(nodes)
+            for id_node in nodes:
+                self.node_to_cluster_[id_node] = id_cluster
+                
+        self.cluster_to_nodes_ = pd.Series(self.cluster_to_nodes_, name="Clusters[Collapsed]")
+        self.node_to_cluster_ = pd.Series(self.node_to_cluster_, name="Clusters[Expanded]")[self.nodes_clustered_]
+        self.number_of_clusters_ = len(self.cluster_to_nodes_)
+        
+        # Community size
+        self.cluster_sizes_ = self.cluster_to_nodes_.map(len)
+
+        self.is_fitted = True
+
+        return self
+        
+    def fit_transform(
+        self,
+        graph,
+        **params,
+        ):
+        self.fit(graph=graph, **params)
+        return self.graph_clustered_
+
+    # Convert
+    # =======
+    def to_pandas_series(self):
+        assert self.is_fitted, "Please fit model before converting clustered graph"
+        return self.weights_clustered_
+        
+    def to_pandas_dataframe(self, fill_diagonal=None, vertical=False, **convert_network_kws):
+        assert self.is_fitted, "Please fit model before converting clustered graph"
+        df = convert_network(
+            data=self.graph_clustered_, 
+            into=pd.DataFrame,
+            fill_diagonal=fill_diagonal,
+            **convert_network_kws,
+        )
+            
+        if vertical:
+            df = df.stack().to_frame().reset_index()
+            df.columns = ["Node_A", "Node_B", "Weight"]
+            df.index.name = "Edge_Index"
+            
+        return df
+
+    def to_igraph(self, **attrs):
+
+        return convert_network(
+            data=self.graph_clustered_, 
+            into=ig.Graph,
+            **attrs,
+        )
+
+
+    def to_symmetric(self, **attrs):
+
+        return convert_network(
+            data=self.graph_clustered_, 
+            into=Symmetric,
+            **attrs,
+        )
+
+    # =======
+    # Built-in
+    # =======
+    def __repr__(self):
+        pad = 4
+        header = format_header("ClusteredNetwork(Name:{}, weight_dtype: {})".format(self.name, self.weights_clustered_.dtype),line_character="=")
+        n = len(header.split("\n")[0])
+        fields = [
+            header,
+            pad*" " + "* Algorithm: {}".format(self.algorithm),
+            pad*" " + "* Minimum edge cooccurrence rate: {}".format(self.minimum_cooccurrence_rate),
+            pad*" " + "* Number of iterations: {}".format(self.n_iter),
+            pad*" " + "* Number of nodes clustered ({}): {} ({:0.2f}%)".format(self.node_type, self.number_of_nodes_clustered_, 100*(self.number_of_nodes_clustered_/self.number_of_nodes_initial_)),
+            pad*" " + "* Number of edges clustered ({}): {} ({:0.2f}%)".format(self.edge_type, self.number_of_edges_clustered_, 100*(self.number_of_edges_clustered_/self.number_of_edges_initial_)),
+            
+            *map(lambda line:pad*" " + line, format_header("| Cluster Sizes (N = {})".format(self.number_of_clusters_), "-", n=n-pad).split("\n")),
+            *map(lambda line: pad*" " + line, repr(self.cluster_sizes_).split("\n")[:-1]),
+            ]
+
+        return "\n".join(fields)
+    
+# =============================
 # Ensemble Association Networks
 # =============================
 class EnsembleAssociationNetwork(object):
@@ -1677,12 +1824,13 @@ class EnsembleAssociationNetwork(object):
         X:pd.DataFrame,
         metric="rho",
         n_iter=1000,
-        sampling_size=0.6180339887,
+        sampling_size=1.0,
+        confidence_interval=95,
         transformation=None,
         random_state=0,
-        with_replacement=False,
+        with_replacement=True,
         function_is_pairwise=True,
-        stats_summary=[np.mean, np.median, np.var, stats.kurtosis, stats.skew] ,
+        stats_summary=[np.median, stats.median_abs_deviation] ,
         stats_tests=[stats.normaltest],
         copy_X=True,
         copy_ensemble=True,
@@ -1729,7 +1877,12 @@ class EnsembleAssociationNetwork(object):
                 if transformation == "abs":
                     transformation = np.abs
             assert hasattr(transformation, "__call__"), "`transformation` must be either one of the following: [{}] or a function(pd.DataFrame) -> pd.DataFrame".format(acceptable_transformations)
-            
+
+        # Check confidence intervals
+        if confidence_interval is not None:
+            assert 50 < confidence_interval < 100, "`confidence_interval needs to be 50 < ci < 100"
+            confidence_interval = (100 - confidence_interval, confidence_interval)
+
        # Check statistics functions
         if self.assert_nan_safe_functions:
             if self.nans_ok:
@@ -1784,13 +1937,14 @@ class EnsembleAssociationNetwork(object):
 
         # Do not use custom draws (this is default)
         else:
-            assert 0 < sampling_size < n
-            if 0 < sampling_size < 1:
+            assert 0 < sampling_size <= n
+            if 0 < sampling_size <= 1.0:
                 sampling_size = int(sampling_size*n)
 
             # Iterations
-            number_of_unique_draws_possible = comb(n, sampling_size, exact=True, repetition=with_replacement)
-            assert n_iter <= number_of_unique_draws_possible, "`n_iter` exceeds the number of possible draws (total_possible={})".format(number_of_unique_draws_possible)
+            if self.assert_draw_size:
+                number_of_unique_draws_possible = comb(n, sampling_size, exact=True, repetition=with_replacement)
+                assert n_iter <= number_of_unique_draws_possible, "`n_iter` exceeds the number of possible draws (total_possible={})".format(number_of_unique_draws_possible)
 
             if random_state is not None:
                 assert isinstance(random_state, int), "`random_state` must either be `None` or of `int` type"
@@ -1827,7 +1981,7 @@ class EnsembleAssociationNetwork(object):
 
             if self.assert_symmetry:
                 assert is_symmetrical(df_associations, tol=self.tol)
-            weights = squareform(df_associations.values, checks=False) #dense_to_condensed(X=df_associations, assert_symmetry=self.assert_symmetry, tol=self.tol)
+            weights = squareform(df_associations.values, checks=False) #redundant_to_condensed(X=df_associations, assert_symmetry=self.assert_symmetry, tol=self.tol)
             ensemble[i] = weights
         
         ensemble = pd.DataFrame(ensemble, columns=edges)
@@ -1869,6 +2023,8 @@ class EnsembleAssociationNetwork(object):
         number_of_statistic_fields = 0
         if stats_summary is not None:
             number_of_statistic_fields += len(stats_summary)
+        if confidence_interval is not None:
+            number_of_statistic_fields += 2
         if stats_tests is not None:
             number_of_statistic_fields += 2*len(stats_tests)
 
@@ -1885,6 +2041,17 @@ class EnsembleAssociationNetwork(object):
                 self.stats_[:,k] = func(values, axis=0)
                 stat_fields.append(stat_name)
                 k += 1
+        if confidence_interval:
+                stat_fields.append("CI({}%)".format(confidence_interval[0]))
+                stat_fields.append("CI({}%)".format(confidence_interval[1]))
+
+                for j in pv(range(number_of_edges), description="Computing confidence intervals: {}".format(confidence_interval), unit=" edges"):
+                    v = values[:,j]
+                    ci = np.nanpercentile(v, q=confidence_interval)
+                    # self.stats_[:,k] = tuple(ci)
+                    self.stats_[j,[k, k+1]] = ci
+                k += 2
+
         if stats_tests:
             for func in pv(stats_tests, description="Computing statistical tests ({})".format(self.name), total=len(stats_tests), unit=" tests"):
                 stat_name = func.__name__
@@ -1912,7 +2079,7 @@ class EnsembleAssociationNetwork(object):
         
     # Convert
     # =======
-    def to_condensed(self, weight="mean", into=Symmetric):
+    def to_condensed(self, weight="median", into=Symmetric):
         if not hasattr(self, "stats_"):
             raise Exception("Please fit model")
         assert weight in self.stats_
@@ -1933,11 +2100,12 @@ class EnsembleAssociationNetwork(object):
         if into == pd.Series:
             return sym_network.weights
         
-    def to_dense(self, weight="mean", fill_diagonal=1):
-        df_dense = self.to_condensed(weight=weight).to_dense(index=self.nodes_)
+    def to_redundant(self, weight="median", fill_diagonal=1):
+        df_redundant = self.to_condensed(weight=weight, into=Symmetric).to_pandas_dataframe(node_subgraph=self.nodes_) #!
+
         if fill_diagonal is not None:
-            np.fill_diagonal(df_dense.values, fill_diagonal)
-        return df_dense
+            np.fill_diagonal(df_redundant.values, fill_diagonal)
+        return df_redundant
 
     def to_networkx(self, into=None, **attrs):
         if into is None:
@@ -2103,13 +2271,14 @@ class SampleSpecificPerturbationNetwork(object):
         reference,
         metric="rho",
         n_iter=1000,
-        sampling_size=0.6180339887,
+        sampling_size=1.0,
+        confidence_interval=95,
         transformation=None,
         random_state=0,
-        with_replacement=False,
+        with_replacement=True,
         include_reference_for_samplespecific=True,
         function_is_pairwise=True,
-        stats_summary=[np.mean, np.var, stats.kurtosis, stats.skew], # Need to adjust for NaN robust
+        stats_summary=[np.median, stats.median_abs_deviation] , # NaN robust?
         stats_tests=[stats.normaltest],
         stats_summary_initial=None, 
         stats_tests_initial=None,
@@ -2187,6 +2356,7 @@ class SampleSpecificPerturbationNetwork(object):
                 metric=metric,
                 n_iter=n_iter,
                 sampling_size=sampling_size,
+                confidence_interval=confidence_interval if copy_ensemble_reference else None,
                 transformation=transformation,
                 random_state=random_state,
                 with_replacement=with_replacement,
@@ -2229,6 +2399,12 @@ class SampleSpecificPerturbationNetwork(object):
             for func in stats_summary:  
                 stat_name = func.__name__
                 stat_fields.append(stat_name)
+        if confidence_interval:
+            assert 50 < confidence_interval < 100, "`confidence_interval needs to be 50 < ci < 100"
+            ci_lower = 100 - confidence_interval
+            ci_upper = confidence_interval
+            stat_fields.append("CI({}%)".format(ci_lower))
+            stat_fields.append("CI({}%)".format(confidence_interval))
         if stats_tests:# is not None:
             for func in stats_tests:
                 stat_name = func.__name__
@@ -2265,6 +2441,7 @@ class SampleSpecificPerturbationNetwork(object):
                         n_iter=draws,
                         sampling_size=sampling_size,
                         transformation=transformation,
+                        confidence_interval=confidence_interval if copy_ensemble_samplespecific else None,
                         random_state=random_state,
                         with_replacement=with_replacement,
                         function_is_pairwise=function_is_pairwise,
@@ -2295,6 +2472,15 @@ class SampleSpecificPerturbationNetwork(object):
                 for func in stats_summary:  
                     self.stats_[i,:,k] = func(values_perturbation, axis=0)
                     k += 1
+
+            if confidence_interval is not None:
+                # Check confidence intervals
+                for j in range(number_of_edges):
+                    v = values_perturbation[:,j]
+                    ci = np.nanpercentile(v, q=[ci_lower, ci_upper])
+                    # self.stats_[:,k] = tuple(ci)
+                    self.stats_[i, j, [k, k+1]] = ci
+                k += 2
                     
             if stats_tests:# is not None:
                 for func in stats_tests:
@@ -2378,7 +2564,7 @@ class SampleSpecificPerturbationNetwork(object):
         
     # Convert
     # =======
-    def to_condensed(self, sample, weight="mean", into=Symmetric):
+    def to_condensed(self, sample, weight="median", into=Symmetric):
         if not hasattr(self, "stats_"):
             raise Exception("Please fit model")
         assert weight in self.stats_.coords["Statistics"]
@@ -2399,11 +2585,13 @@ class SampleSpecificPerturbationNetwork(object):
         if into == pd.Series:
             return sym_network.weights
         
-    def to_dense(self, sample, weight="mean", fill_diagonal=1):
-        df_dense = self.to_condensed(sample=sample, weight=weight).to_dense(index=self.nodes_)
+    def to_redundant(self, sample, weight="median", fill_diagonal=1):
+        # df_redundant = self.to_condensed(sample=sample, weight=weight).to_redundant(index=self.nodes_) #!
+        df_redundant = self.to_condensed(sample=sample, weight=weight, into=Symmetric).to_pandas_dataframe(node_subgraph=self.nodes_) #!
+
         if fill_diagonal is not None:
-            np.fill_diagonal(df_dense.values, fill_diagonal)
-        return df_dense
+            np.fill_diagonal(df_redundant.values, fill_diagonal)
+        return df_redundant
 
     def to_networkx(self, sample, into=None, **attrs):
         if into is None:
@@ -2418,6 +2606,21 @@ class SampleSpecificPerturbationNetwork(object):
             graph.add_edge(node_A, node_B, **statistics)
         return graph 
 
+    def to_perturbation(self, weight="median", drop_edges_with_missing_values=True):
+        sample_to_perturbation = OrderedDict()
+
+        for id_sample in self.index_samplespecific_:
+            sample_to_perturbation[id_sample] = self.to_condensed(sample=id_sample, weight=weight, into=pd.Series)
+
+        X_perturbation = pd.DataFrame(sample_to_perturbation).T
+        X_perturbation.index.name = "Samples"
+        X_perturbation.columns.name = "Edges"
+
+        if drop_edges_with_missing_values:
+            X_perturbation = X_perturbation.dropna(how="any", axis=1)
+
+        return X_perturbation
+    
     def copy(self):
         return copy.deepcopy(self)
 
@@ -2509,16 +2712,17 @@ class DifferentialEnsembleAssociationNetwork(object):
         treatment,
         metric="rho",
         n_iter=1000,
-        sampling_size=0.6180339887,
+        sampling_size=1.0,
+        confidence_interval=95,
         transformation=None,
         random_state=0,
-        with_replacement=False,
+        with_replacement=True,
         function_is_pairwise=True,
         stats_comparative = [stats.wasserstein_distance],
         stats_tests_comparative = [stats.mannwhitneyu],
-        stats_summary_initial=[np.mean, np.var, stats.kurtosis, stats.skew],
+        stats_summary_initial=[np.median, stats.median_abs_deviation],
         stats_tests_initial=[stats.normaltest],
-        stats_differential=[np.mean],
+        stats_differential=[np.median],
         copy_X=True,
         copy_y=True,
         copy_ensemble_reference=True, # This will get very big very quickly
@@ -2550,6 +2754,7 @@ class DifferentialEnsembleAssociationNetwork(object):
         y = y[X.index]
  
         # Ensemble Reference 
+        print(format_header("Constructing Network: reference({})".format(reference)), file=sys.stderr)
         index_reference = sorted(y[lambda i: i == reference].index)
         ensemble_reference = EnsembleAssociationNetwork(
                 name=reference, 
@@ -2567,6 +2772,7 @@ class DifferentialEnsembleAssociationNetwork(object):
                 metric=metric,
                 n_iter=n_iter,
                 sampling_size=sampling_size,
+                confidence_interval=confidence_interval,
                 transformation=transformation,
                 random_state=random_state,
                 with_replacement=with_replacement,
@@ -2578,6 +2784,7 @@ class DifferentialEnsembleAssociationNetwork(object):
         )
 
         # Treatment samples
+        print(format_header("Constructing Network: treatment({})".format(treatment)), file=sys.stderr)
         index_treatment = y[lambda i: i == treatment].index #sorted(set(X.index) - set(index_reference))
         ensemble_treatment = EnsembleAssociationNetwork(
                 name=treatment, 
@@ -2595,6 +2802,7 @@ class DifferentialEnsembleAssociationNetwork(object):
                 metric=metric,
                 n_iter=n_iter,
                 sampling_size=sampling_size,
+                confidence_interval=confidence_interval,
                 transformation=transformation,
                 random_state=random_state,
                 with_replacement=with_replacement,
@@ -2622,6 +2830,7 @@ class DifferentialEnsembleAssociationNetwork(object):
             for func in stats_comparative:  
                 stat_name = func.__name__
                 stat_fields.append(stat_name)
+
         if stats_tests_comparative:# is not None:
             for func in stats_tests_comparative:
                 stat_name = func.__name__
@@ -2630,8 +2839,6 @@ class DifferentialEnsembleAssociationNetwork(object):
 
         self.stats_comparative_ = np.empty((number_of_edges, len(stat_fields)))
         self.stats_comparative_[:] = np.nan 
-
-
 
         # Comparative statistics
         k = 0
@@ -2671,7 +2878,7 @@ class DifferentialEnsembleAssociationNetwork(object):
         self.memory_ += self.stats_comparative_memory_ 
 
         # Differential statistics
-        self.ensemble_ = list()
+        self.stats_differential_ = list()
         for func in pv(stats_differential, description="Computing differential", unit="stat"):
             func_name = func
             if hasattr(func, "__call__"):
@@ -2679,10 +2886,11 @@ class DifferentialEnsembleAssociationNetwork(object):
             distribution_reference = ensemble_reference.stats_[func_name]
             distribution_treatment = ensemble_treatment.stats_[func_name]
             differential = pd.Series(distribution_treatment - distribution_reference, name=func_name)
-            self.ensemble_.append(differential)
-        self.ensemble_ = pd.DataFrame(self.ensemble_).T
-        self.ensemble_memory_ = self.ensemble_.memory_usage().sum()
-        self.memory_ += self.ensemble_memory_
+            self.stats_differential_.append(differential)
+        self.stats_differential_ = pd.DataFrame(self.stats_differential_).T
+        self.stats_differential_memory_ = self.stats_differential_.memory_usage().sum()
+        self.memory_ += self.stats_differential_memory_
+        self.ensemble_ = "Please use .stats_differential_ instead.  Note that .ensemble_ attributes contain the associations for each permutation and for DifferentialEnsembleAssociationNetworks summary metrics are compared between 2 ensemble networks,thus, .ensemble_ is not applicable"
         
         # Remove ensemble_ if relevant
         if not copy_ensemble_reference:
@@ -2748,13 +2956,13 @@ class DifferentialEnsembleAssociationNetwork(object):
         
     # Convert
     # =======
-    def to_condensed(self, weight="mean", into=Symmetric):
-        if not hasattr(self, "ensemble_"):
+    def to_condensed(self, weight="median", into=Symmetric):
+        if not hasattr(self, "stats_differential_"):
             raise Exception("Please fit model")
-        assert weight in self.ensemble_.columns
+        assert weight in self.stats_differential_.columns
         assert into in {Symmetric, pd.Series}
         sym_network = Symmetric(
-            data=self.ensemble_[weight], 
+            data=self.stats_differential_[weight], 
             name=self.name, 
             node_type=self.node_type, 
             edge_type=self.edge_type, 
@@ -2769,22 +2977,23 @@ class DifferentialEnsembleAssociationNetwork(object):
         if into == pd.Series:
             return sym_network.weights
         
-    def to_dense(self, weight="mean", fill_diagonal=1):
-        df_dense = self.to_condensed(weight=weight).to_dense(index=self.nodes_)
+    def to_redundant(self, weight="median", fill_diagonal=1):
+        df_redundant = self.to_condensed(weight=weight, into=Symmetric).to_pandas_dataframe(node_subgraph=self.nodes_) #!
+
         if fill_diagonal is not None:
-            np.fill_diagonal(df_dense.values, fill_diagonal)
-        return df_dense
+            np.fill_diagonal(df_redundant.values, fill_diagonal)
+        return df_redundant
 
     def to_networkx(self, into=None, **attrs):
         if into is None:
             into = nx.Graph
-        if not hasattr(self, "ensemble_"):
+        if not hasattr(self, "stats_differential_"):
             raise Exception("Please fit model")
 
         metadata = { "node_type":self.node_type, "edge_type":self.edge_type, "observation_type":self.observation_type, "metric":self.metric_name}
         metadata.update(attrs)
         graph = into(name=self.name, **metadata)
-        for (node_A, node_B), statistics in pv(self.ensemble_.iterrows(), description="Building NetworkX graph from statistics", total=self.number_of_edges_, unit=" edges"):
+        for (node_A, node_B), statistics in pv(self.stats_differential_.iterrows(), description="Building NetworkX graph from statistics", total=self.number_of_edges_, unit=" edges"):
             graph.add_edge(node_A, node_B, **statistics)
         return graph 
 
@@ -2795,7 +3004,7 @@ class DifferentialEnsembleAssociationNetwork(object):
     # ========
     def __repr__(self):
         pad = 4
-        fitted = hasattr(self, "ensemble_") # Do not keep `fit_`
+        fitted = hasattr(self, "stats_differential_") # Do not keep `fit_`
         if fitted:
             header = format_header("{}(Name:{}, Reference: {}, Treatment: {}, Metric: {})".format(type(self).__name__, self.name, self.reference_, self.treatment_, self.metric_name),line_character="=")
             n = len(header.split("\n")[0])
@@ -2830,7 +3039,7 @@ class DifferentialEnsembleAssociationNetwork(object):
 
             fields.append(pad*" " + "* Initial Statistics ({})".format(self.ensemble_reference_.stats_.columns.tolist()))
             fields.append(pad*" " + "* Comparative Statistics ({}, memory={})".format(self.stats_comparative_.columns.tolist(), format_memory(self.stats_comparative_memory_)))
-            fields.append(pad*" " + "* Differential Statistics ({}, memory={})".format(self.ensemble_.columns.tolist(), format_memory(self.ensemble_memory_)))
+            fields.append(pad*" " + "* Differential Statistics ({}, memory={})".format(self.stats_differential_.columns.tolist(), format_memory(self.stats_differential_memory_)))
 
             return "\n".join(fields)
         else:
