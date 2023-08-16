@@ -41,7 +41,7 @@ Documentation will be released upon version 1.0 once API is stabilized.
 import ensemble_networkx as enx
 ```
 
-##### Simple case of an [iris dataset](https://en.wikipedia.org/wiki/Iris_flower_data_set) ensemble network
+#### Simple case of an [iris dataset](https://en.wikipedia.org/wiki/Iris_flower_data_set) ensemble network
 
 Here we randomly sample 100 times, calculate the associations for each draw, and calculate summary statistics for the distributons of association values (i.e., edge weights). 
 
@@ -123,7 +123,7 @@ Edges
 
 ```
 
-##### Simple case of an ensemble network for binary data using [Matthew's Correlation Coefficient (MCC)](https://en.wikipedia.org/wiki/Phi_coefficient)
+#### Simple case of an ensemble network for binary data using [Matthew's Correlation Coefficient (MCC)](https://en.wikipedia.org/wiki/Phi_coefficient)
 
 Pearson correlation isn't designed for binary data (i.e., True/False or 0/1) so you can use `MCC` instead.
 
@@ -162,7 +162,7 @@ EnsembleAssociationNetwork(Name:Binary, Metric: mcc)
     * Statistics (['mean', 'var', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=399.742 KB)
 ```
 
-##### Simple case of creating sample-specific perturbation networks for compositional data using [Rho Proportionality](https://pubmed.ncbi.nlm.nih.gov/26762323/) and confidence interval of [2.5, 97.5]
+#### Simple case of creating sample-specific perturbation networks for compositional data using [Rho Proportionality](https://pubmed.ncbi.nlm.nih.gov/26762323/) and confidence interval of [2.5, 97.5]
 
 *Iris data is NOT compositional but this is for demonstration since they are positive values.*
 
@@ -240,7 +240,7 @@ list(graph.edges(data=True))[0]
 
 ```
 
-##### Create a SSPN using a custom association function
+#### Create a SSPN using a custom association function
 
 Here we specify a custom function for the associations which is the inverse kullback leibler divergence.
 
@@ -286,7 +286,7 @@ SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone])
     * Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=42.188 KB)
 ```
 
-##### Feature engineering using categories
+#### Feature engineering using categories
 
 Let's engineer some categories by collapsing by some predefined category. Check out `Phylogenomic Functional Categories` in [Espinoza et al. 2022](https://academic.oup.com/pnasnexus/article/1/5/pgac239/6762943) for how these are used in practice.
 
@@ -332,7 +332,7 @@ cef.fit_transform(X, aggregate_fn=np.sum)
 # iris_3    7.7     1.7
 ```
 
-##### Cluster networks using Leiden or Louvain community detection
+#### Cluster networks using Leiden or Louvain community detection
 We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`)
 
 ```
@@ -366,7 +366,7 @@ Let's take a look at the cluster assignments:
 ```
 cn.node_to_cluster_.head()
 
-Nodes[Initial]
+Nodes[Clustered]
 iris_1    Leiden_2
 iris_0    Leiden_2
 iris_2    Leiden_2
@@ -401,7 +401,7 @@ sym = cn.to_symmetric()
 
 ```
 
-##### Differential ensemble association networks
+#### Differential ensemble association networks
 We are going to create a differential between setosa and not-setosa samples.
 
 ```
