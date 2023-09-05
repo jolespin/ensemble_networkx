@@ -1,6 +1,7 @@
 
 
 #### Completed:
+* 2023.9.5 - Changed `method="biweight_midcorrelation"` to `method="bicor"`.  Changed default method to `pearson` instead of `rho` to generalize (though, please use `rho`, `phi`, or `pcorr_bshrink` for compositional data).  Added `partial_correlation_with_basis_shrinkage` support from `comositional` package using `method="pcorr_bshrink"` to use similar terminology with `Propr` and `ppcorr` R packages.
 * 2023.8.15 - Added `ClusteredNetwork` for wrapper around `community_detection` and `edge_cluster_cooccurrence` (formerly known as `cluster_homogeneity`).
 * 2023.8.14 - Changed `dense` to `redundant` to be more consistent with `scikit-bio`.  Added `confidence_interval` to ensemble networks.  Changed default metrics to `np.median` and `stats.median_abs_deviation`.  Changed default `sampling_size` from `0.618...` to `1.0` and `with_replacement=False` to `with_replacement=True`.
 * 2023.7.20 - Added `pairwise_mcc` with Mathew's Correlation Coefficient for binary correlations. Functionality also available in `EnsembleAssociationNetwork` ([@411an13](https://github.com/411an13))

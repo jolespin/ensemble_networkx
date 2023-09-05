@@ -103,7 +103,7 @@ EnsembleAssociationNetwork(Name:Iris, Metric: pearson)
 
 Let's look at the "ensemble" which includes all of the associations for each of the permutations.
 
-```
+```python
 # View ensemble
 print(ens.ensemble_.head())
 Edges       (sepal_length, sepal_width)  (petal_length, sepal_length)  \
@@ -117,7 +117,7 @@ Iterations
 
 Now let's look at the summary statistics that were calculated for each of the edges:
 
-```
+```python
 # View statistics
 print(ens.stats_.head())
 
@@ -136,7 +136,6 @@ Edges
 (petal_width, sepal_length)   0.844199         8.300075            0.015764  
 (petal_length, sepal_width)  -0.327368         5.811593            0.054705  
 (petal_width, sepal_width)   -0.261532        11.567172            0.003078  
-
 
 ```
 
@@ -254,12 +253,11 @@ list(graph.edges(data=True))[0]
   'CI(97.5%)': 0.09388843207188755,
   'normaltest|stat': 4.196194170296813,
   'normaltest|p_value': 0.12268967426224149})
-
 ```
 
 Now let's output the perturbation matrix which includes all SSPNs across all the samples using the median values of the perturbation distributions for the weight.
 
-```
+```python
 X_perturbation = sspn_rho.to_perturbation(weight='median')
 X_perturbation.head()
 # Edges	(sepal_length, sepal_width)	(sepal_length, petal_length)	(sepal_length, petal_width)	(sepal_width, petal_length)	(sepal_width, petal_width)	(petal_width, petal_length)
@@ -274,7 +272,7 @@ X_perturbation.head()
 You can also now use `partial_correlation_with_basis_shrinkage` from the [`compositional`](https://github.com/jolespin/compositional) package ([Jin et al. 2022](https://arxiv.org/abs/2212.00496) and [Erb 2020](https://www.sciencedirect.com/science/article/pii/S2590197420300082)). 
 
 
-```
+```python
 sspn_bshrink = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
 sspn_bshrink.fit(X=X, y=y, metric="pcorr_bshrink", reference="setosa", n_iter=100, confidence_interval=97.5, copy_ensemble=True)
 print(sspn_bshrink)
@@ -405,7 +403,7 @@ cef.fit_transform(X, aggregate_fn=np.sum)
 #### Cluster networks using Leiden or Louvain community detection
 We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`)
 
-```
+```python
 # Get graph
 graph = enx.convert_network(X.T.corr(), nx.Graph)
 
@@ -433,7 +431,7 @@ ClusteredNetwork(Name:Iris, weight_dtype: float64)
 
 Let's take a look at the cluster assignments: 
 
-```
+```python
 cn.node_to_cluster_.head()
 
 Nodes[Clustered]
@@ -447,7 +445,7 @@ Name: Clusters[Expanded], dtype: object
 
 We can also get a cluster to nodes dictionary:
 
-```
+```python
 cn.cluster_to_nodes_
 
 Leiden_1    {iris_117, iris_76, iris_59, iris_126,...
@@ -457,7 +455,7 @@ Name: Clusters[Collapsed], dtype: object
 
 We can also get the clustered graph in other formats: 
 
-```
+```python
 # Default
 graph = cn.graph_clustered_
 
@@ -474,8 +472,7 @@ sym = cn.to_symmetric()
 #### Differential ensemble association networks
 We are going to create a differential between setosa and not-setosa samples.
 
-```
-
+```python
 X,y = syu.get_iris_data(["X", "y"])
 y_setosaornot = y.map(lambda x: {True:"setosa", False:"not_setosa"}[x == "setosa"])
 
@@ -519,7 +516,7 @@ DifferentialEnsembleAssociationNetwork(Name:Iris, Reference: setosa, Treatment: 
 
 We can look at individual stats for each class: 
 
-```
+```python
 dn.ensemble_reference_.stats_
 
 Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
@@ -546,7 +543,7 @@ Edges
 
 We can also look stats that compare the distributions of each edge between the 2 conditions: 
 
-```
+```python
 dn.stats_comparative_
 
 	wasserstein_distance	mannwhitneyu|stat	mannwhitneyu|p_value
@@ -562,7 +559,7 @@ Edges
 Lastly, we can get the differentials between 2 statistics calculated for each conditions.  We would use this as our resulting differential network: 
 
 
-```
+```python
 dn.stats_differential_
 
 	median
