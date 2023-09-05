@@ -22,7 +22,7 @@ from scipy.special import comb
 from scipy.spatial.distance import squareform, pdist
 
 # Compositional
-from compositional import pairwise_rho, pairwise_phi
+from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlation_with_basis_shrinkage
 
 # soothsayer_utils
 from soothsayer_utils import pv, flatten, assert_acceptable_arguments, is_symmetrical, is_graph, write_object, format_memory, format_header, format_path, is_nonstring_iterable, Suppress, dict_build, dict_filter, is_dict, is_dict_like, is_color, is_number, check_packages, is_query_class
@@ -1822,7 +1822,7 @@ class EnsembleAssociationNetwork(object):
     def fit(
         self,
         X:pd.DataFrame,
-        metric="rho",
+        metric="pearson",
         n_iter=1000,
         sampling_size=1.0,
         confidence_interval=95,
@@ -1847,7 +1847,20 @@ class EnsembleAssociationNetwork(object):
                 metric_name = function.__name__
                 metric = lambda X: self._pandas_association(X=X, metric=function)
 
-        acceptable_metrics = {"rho", "phi", "biweight_midcorrelation", "spearman", "pearson", "kendall","mcc"}
+        acceptable_metrics = {
+            # Common
+            "pearson", 
+            "spearman", 
+            "kendall",
+            # Compositional
+            "rho", 
+            "phi", 
+            "pcorr_bshrink",
+            # Robust
+            "bicorr", 
+            # Binary
+            "mcc", 
+            }
         if isinstance(metric, str):
             assert_acceptable_arguments(metric, acceptable_metrics)
             metric_name = metric
@@ -1855,10 +1868,12 @@ class EnsembleAssociationNetwork(object):
                 metric = pairwise_rho
             if metric == "phi":
                 metric = pairwise_phi
-            if metric == "biweight_midcorrelation":
+            if metric == "bicorr":
                 metric = pairwise_biweight_midcorrelation
             if metric == "mcc":
                 metric = pairwise_mcc
+            if metric == "pcorr_bshrink":
+                metric = pairwise_partial_correlation_with_basis_shrinkage
             if metric in {"spearman", "pearson", "kendall"}:
                 association = metric
                 metric = lambda X: self._pandas_association(X=X, metric=association)
@@ -2269,7 +2284,7 @@ class SampleSpecificPerturbationNetwork(object):
         X:pd.DataFrame,
         y:pd.Series,
         reference,
-        metric="rho",
+        metric="pearson",
         n_iter=1000,
         sampling_size=1.0,
         confidence_interval=95,
@@ -2710,7 +2725,7 @@ class DifferentialEnsembleAssociationNetwork(object):
         y:pd.Series,
         reference,
         treatment,
-        metric="rho",
+        metric="pearson",
         n_iter=1000,
         sampling_size=1.0,
         confidence_interval=95,

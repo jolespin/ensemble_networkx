@@ -26,6 +26,6 @@ name='ensemble_networkx',
         "igraph",
         "xarray >= 0.15",
         "soothsayer_utils >= 2022.6.24",
-        "compositional >= 2023.8.9",
+        "compositional >= 2023.8.28",
       ],
 )
