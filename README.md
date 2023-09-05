@@ -269,6 +269,8 @@ X_perturbation.head()
 # iris_4	-0.000990	-0.000612	0.000142	-0.002192	-0.001285	0.001501
 ```
 
+#### Sample-specific perturbation networks for compositional data using [partial correlation with basis shrinkage](https://arxiv.org/abs/2212.00496)
+
 You can also now use `partial_correlation_with_basis_shrinkage` from the [`compositional`](https://github.com/jolespin/compositional) package ([Jin et al. 2022](https://arxiv.org/abs/2212.00496) and [Erb 2020](https://www.sciencedirect.com/science/article/pii/S2590197420300082)). 
 
 
