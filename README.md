@@ -15,8 +15,6 @@ Compatible for Python 3.
     
 #### Citations (Debut):
    
-
-
    * Nabwera HM+, Espinoza JL+, Worwui A, Betts M, Okoi C, Sesay AK, Bancroft R, Agbla SC, Jarju S, Bradbury RS, Colley M, Jallow AT, Liu J, Houpt ER, Prentice AM, Antonio M, Bernstein RM, Dupont CL+, Kwambana-Adams BA+. *Interactions between fecal gut microbiome, enteric pathogens, and energy regulating hormones among acutely malnourished rural Gambian children*. EBioMedicine. 2021 Oct 22;73:103644. [doi: 10.1016/j.ebiom.2021.103644](https://doi.org/10.1016/j.ebiom.2021.103644). PMID: 34695658.
 
 
@@ -31,6 +29,24 @@ pip install git+https://github.com/jolespin/ensemble_networkx
 
 #### Source:
 * Migrated from [`soothsayer`](https://github.com/jolespin/soothsayer)
+
+
+#### Supported metrics: 
+* [Compositional data](https://en.wikipedia.org/wiki/Compositional_data) (e.g., counts data, [NGS](https://www.illumina.com/science/technology/next-generation-sequencing.html), etc.)
+	* [**Do not use** Pearson, Spearman, Kendall-Tau, Biweight Midcorrelation for compositional data](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1004075).  
+	* Compositionally-valid association metrics: 
+		* Partial correlation with basis shrinkage (`pcorr_bshrink`) ([Jin et al. 2022](https://arxiv.org/abs/2212.00496), [Erb 2020](https://www.sciencedirect.com/science/article/pii/S2590197420300082))
+		* Proportionality (`rho`) ([Lovell et al. 2015](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1004075), [Erb 2016](https://link.springer.com/article/10.1007/s12064-015-0220-8))
+		* Proportionality (`phi`) ([Lovell et al. 2015](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1004075), [Erb 2016](https://link.springer.com/article/10.1007/s12064-015-0220-8))
+		
+* [Binary data](https://en.wikipedia.org/wiki/Binary_data) (e.g., detected vs. not-detected)
+	* Matthew's Correlation Coefficient (`mcc`) 
+
+* Miscellaneous data:
+	* Pearson's correlation (`pearson`)
+	* Spearman's correlation (`spearman`)
+	* Kendall-Tau (`kendall`)
+	* Biweight midcorrelation (`bicor`)
 
 #### Case studies, tutorials and usage:
 Documentation will be released upon version 1.0 once API is stabilized.
@@ -86,6 +102,7 @@ EnsembleAssociationNetwork(Name:Iris, Metric: pearson)
 ```
 
 Let's look at the "ensemble" which includes all of the associations for each of the permutations.
+
 ```
 # View ensemble
 print(ens.ensemble_.head())
@@ -238,6 +255,59 @@ list(graph.edges(data=True))[0]
   'normaltest|stat': 4.196194170296813,
   'normaltest|p_value': 0.12268967426224149})
 
+```
+
+Now let's output the perturbation matrix which includes all SSPNs across all the samples using the median values of the perturbation distributions for the weight.
+
+```
+X_perturbation = sspn_rho.to_perturbation(weight='median')
+X_perturbation.head()
+# Edges	(sepal_length, sepal_width)	(sepal_length, petal_length)	(sepal_length, petal_width)	(sepal_width, petal_length)	(sepal_width, petal_width)	(petal_width, petal_length)
+# Samples						
+# iris_0	0.000757	-0.001263	-0.000486	-0.001056	-0.000663	0.001352
+# iris_1	-0.007569	0.001436	-0.000439	-0.003043	0.001497	-0.000325
+# iris_2	0.000189	-0.001334	-0.000158	-0.000911	-0.000124	0.000483
+# iris_3	0.000011	-0.005670	0.000814	-0.005226	0.001058	-0.000984
+# iris_4	-0.000990	-0.000612	0.000142	-0.002192	-0.001285	0.001501
+```
+
+You can also now use `partial_correlation_with_basis_shrinkage` from the [`compositional`](https://github.com/jolespin/compositional) package ([Jin et al. 2022](https://arxiv.org/abs/2212.00496) and [Erb 2020](https://www.sciencedirect.com/science/article/pii/S2590197420300082)). 
+
+
+```
+sspn_bshrink = enx.SampleSpecificPerturbationNetwork(name="Iris", node_type="leaf measurement", edge_type="association", observation_type="specimen")
+sspn_bshrink.fit(X=X, y=y, metric="pcorr_bshrink", reference="setosa", n_iter=100, confidence_interval=97.5, copy_ensemble=True)
+print(sspn_bshrink)
+
+========================================================================================================
+SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone]), Metric: pcorr_bshrink)
+========================================================================================================
+    * Number of nodes (leaf measurement): 4
+    * Number of edges (association): 6
+    * Observation type: specimen
+    ----------------------------------------------------------------------------------------------------
+    | Parameters
+    ----------------------------------------------------------------------------------------------------
+    * n_iter: 100
+    * sampling_size: 50
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 787.684 KB
+    ----------------------------------------------------------------------------------------------------
+    | Data
+    ----------------------------------------------------------------------------------------------------
+    * Features (n=200, m=4, memory=9.930 KB)
+    ----------------------------------------------------------------------------------------------------
+    | Intermediate
+    ----------------------------------------------------------------------------------------------------
+    * Reference Ensemble (memory=220 B)
+    * Sample-specific Ensembles (memory=32.227 KB)
+    ----------------------------------------------------------------------------------------------------
+    | Terminal
+    ----------------------------------------------------------------------------------------------------
+    * Ensemble (memory=703.125 KB)
+    * Statistics (['median', 'median_abs_deviation', 'CI(2.5%)', 'CI(97.5%)', 'normaltest|stat', 'normaltest|p_value'], memory=42.188 KB)
 ```
 
 #### Create a SSPN using a custom association function
@@ -411,7 +481,7 @@ y_setosaornot = y.map(lambda x: {True:"setosa", False:"not_setosa"}[x == "setosa
 
 # Differential network between setosa and not setosa
 dn = enx.DifferentialEnsembleAssociationNetwork(name="Iris")
-dn.fit(X, y_setosaornot, "setosa", "not_setosa")
+dn.fit(X, y_setosaornot, reference="setosa", treatment="not_setosa", metric="rho")
 print(dn)
 
 ========================================================================================================
