@@ -20,6 +20,8 @@ import xarray as xr
 from scipy import stats
 from scipy.special import comb
 from scipy.spatial.distance import squareform, pdist
+from sklearn.base import clone, is_classifier, is_regressor
+from sklearn.exceptions import ConvergenceWarning, UndefinedMetricWarning
 
 # Compositional
 from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlation_with_basis_shrinkage
@@ -31,6 +33,7 @@ try:
     from . import __version__
 except ImportError:
     __version__ = "ImportError: attempted relative import with no known parent package"
+
 
 
 # ===================
@@ -378,6 +381,16 @@ def heterogeneity(k:pd.Series):
     """
     number_of_nodes = k.size
     return np.sqrt(number_of_nodes * np.sum(k**2)/np.sum(k)**2 - 1)
+
+def entropy(k:pd.Series, base=2):
+    assert np.all(k > 0), "All weights must be greater than 0"
+    return stats.entropy(k, base=base)
+    
+def evenness(k:pd.Series):
+    weights_greater_than_zero = k > 0
+    assert np.all(weights_greater_than_zero), "All weights must be greater than 0"
+    number_of_nonzero_weights = np.sum(weights_greater_than_zero)
+    return entropy(k, base=2)/np.log2(number_of_nonzero_weights)
 
 # Topological overlap
 def topological_overlap_measure(
@@ -1087,6 +1100,8 @@ class Symmetric(object):
         return self.weights.sum()
     def sem(self):
         return self.weights.sem()
+    def mad(self):
+        return stats.median_abs_deviation(self.weights)
     def var(self):
         return self.weights.var()
     def std(self):
@@ -3068,3 +3083,778 @@ class DifferentialEnsembleAssociationNetwork(object):
                 ]
             return "\n".join(fields)
 
+
+class AggregateNetwork(object):
+    def __init__(
+        self, 
+        name=None,
+        node_type=None,
+        edge_type=None,
+        observation_type=None,
+        target_type=None,
+        remove_self_interactions=False,
+        normalize_edge_weights=False,
+        normalize_node_weights=False,
+
+        verbose=1, 
+        ):
+        self.name = name
+        self.node_type = node_type
+        self.edge_type = edge_type
+        self.observation_type = observation_type
+        self.target_type = target_type
+        self.remove_self_interactions = remove_self_interactions
+        self.normalize_edge_weights = normalize_edge_weights
+        self.normalize_node_weights = normalize_node_weights
+        self.verbose = verbose
+        self.is_fitted = False
+
+    def _get_feature_importance_attribute(self, estimator, importance_getter):
+        """
+        Adapted from the following source: 
+        https://github.com/jolespin/clairvoyance/blob/main/clairvoyance/clairvoyance.py
+        """
+        estimator = clone(estimator)
+        _X = np.random.normal(size=(5,2))
+        if is_classifier(estimator):
+            _y = np.asarray(list("aabba"))
+        if is_regressor(estimator):
+            _y = np.asarray(np.random.normal(size=5))
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=ConvergenceWarning)
+            estimator.fit(_X,_y)
+        if importance_getter == "auto":
+            importance_getter = None
+            if hasattr(estimator, "coef_"):
+                importance_getter = "coef_"
+            if hasattr(estimator, "feature_importances_"):
+                importance_getter = "feature_importances_"
+            assert importance_getter is not None, "If `importance_getter='auto'`, `estimator` must be either a linear model with `.coef_` or a tree-based model with `.feature_importances_`"
+        assert hasattr(estimator, importance_getter), "Fitted estimator does not have feature weight attribute: `{}`".format(importance_getter)
+        return importance_getter
+
+    def _format_weights(self, W):
+        """
+        Adapted from the following source: 
+        https://github.com/jolespin/clairvoyance/blob/main/clairvoyance/clairvoyance.py
+
+        #! devel: 
+        In the case of linear models with multiple classes the coef_ array will (n features, m classes).  
+        How should signs be handled here?  Original implementation was to take the absolute value and mean but sign information is important for interpretation.
+        Current implementation is to just take the mean which could mask some of the larger coefficients.
+        """
+
+        W = W.squeeze()
+        # W = np.abs(W)
+        if W.ndim > 1:
+            warnings.warn(
+            """
+            You must be using a multi-class linear-based model which gives 1 coefficient per feature per class.  
+            Since sign information is important for interpretation, the current implementation just takes the average
+            instead of the original implementation in Clairvoyance that takes the absolute value then the average.
+            This functionality may change in future versions and this warning is to inform you that the current implementation
+            for multi-class linear model coefficients are experimental for AggregateNetworks.
+            """
+            )
+            W = np.mean(W, axis=0)
+        # W = W/W.sum()
+        return W
+
+    # Format handles for a matplotlib legend
+    @check_packages(["matplotlib"])
+    def _format_mpl_legend_handles(self, label_to_color, label_specific_kws=None, marker="s", markeredgecolor="black", markeredgewidth=1, **kwargs ):
+        """
+        More info on parameters: https://matplotlib.org/api/_as_gen/matplotlib.lines.Line2D.html#matplotlib.lines.Line2D.set_marker
+        Usage: plt.legend(*format_mpl_legend_handles(cdict_handles),
+                          loc="lower center",
+                          bbox_to_anchor=(0.5,-0.15),
+                          fancybox=True, shadow=True,
+                          prop={'size':15})
+    
+        Input: cdict_handles = Dictionary object of {label:color}
+        Output: Tuple of handles and labels
+        """
+        import matplotlib.pyplot as plt
+        
+        handle_kws = {"marker":marker, "markeredgecolor":markeredgecolor, "markeredgewidth":markeredgewidth, "linewidth":0}
+        handle_kws.update(kwargs)
+    
+        labels = list(label_to_color.keys())
+        if label_specific_kws is not None:
+            label_specific_kws = dict(label_specific_kws)
+            assert set(labels) == set(label_specific_kws.keys()), f"If `label_specific_kws` is not None then it must have all elements from `cdict_handles`"
+        else:
+            label_specific_kws = {label:handle_kws for label in labels}
+    
+        handles = list()
+        for label, color in label_to_color.items():
+            handle = plt.Line2D([0,0],[0,0], color=color, **label_specific_kws[label])
+            handles.append(handle)
+        return (handles, labels)
+
+
+
+    # =======
+    # Built-in
+    # =======
+    def __repr__(self):
+        pad = 4
+        header = format_header("AggregateNetwork(Name:{})".format(self.name),line_character="=")
+        n = len(header.split("\n")[0])
+
+        if self.is_fitted:
+            fields = [
+                header,
+                pad*" " + "* Estimator: {}".format(self.estimator_.__class__.__name__),
+                pad*" " + "* Estimator Type: {}".format( self.estimator_type_),
+                pad*" " + "* Number of nodes ({}): {}".format(self.node_type, self.number_of_nodes_),
+                pad*" " + "* Number of edges ({}): {}".format(self.edge_type, self.number_of_edges_),
+                pad*" " + "* Number of observations ({}): {}".format(self.observation_type, self.number_of_observations_),
+                pad*" " + "* Total connectivity ({}): {:.3f} k".format(self.feature_weight_attribute_, self.total_edge_connectivity_),
+
+            
+            ]
+            if self.estimator_type_ == "classifier":
+                pad*" " + "* Number of classes ({}): {}".format(self.target_type, self.number_of_classes_),
+
+            fields += [
+                *map(lambda line:pad*" " + line, format_header("| Edge Weights".format(self.total_edge_connectivity_), "-", n=n-pad).split("\n")),
+                *map(lambda line: pad*" " + line, repr(self.edge_weights_).split("\n")[1:-1]),
+                *map(lambda line:pad*" " + line, format_header("| Node Weights", "-", n=n-pad).split("\n")),
+                *map(lambda line: pad*" " + line, repr(self.node_weights_).split("\n")[1:-1]),
+                ]
+        else:
+            fields = [header]
+
+        return "\n".join(fields)
+    
+    def __getitem__(self, key):
+        """
+        `key` can be a node or non-string iterable of edges
+        """
+        assert self.is_fitted, "Please .fit model before using this method"
+        if isinstance(key, frozenset):
+            return self.edge_weights_[key]
+        else:
+            return self.node_weights_[key]
+        
+    def __len__(self):
+        return self.number_of_edges_
+        
+    def __iter__(self):
+        for v in self.edges_:
+            yield v
+            
+    def items(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.items()
+        
+    def iteritems(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.iteritems()
+        
+    def keys(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.keys()
+        
+    def apply(self, func, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return func(weights)
+        
+    def mean(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.mean()
+        
+    def median(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.median()
+        
+    def min(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.min()
+        
+    def max(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.max()
+        
+    def idxmin(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.idxmin()
+        
+    def idxmax(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.idxmax()
+        
+    def sum(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.sum()
+        
+    def sem(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.sem()
+        
+    def var(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.var()
+        
+    def std(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.std()
+
+    def mad(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return stats.median_abs_deviation(weights)
+        
+    def describe(self, level="edges", **kwargs):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.describe(**kwargs)
+        
+    def map(self, func, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        return weights.map(func)
+        
+    def entropy(self, base=2, level="edges"):
+
+        assert level in {"nodes", "edges"}
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+        assert np.all(weights > 0), "All weights must be greater than 0"
+        return stats.entropy(weights, base=base)
+        
+    def evenness(self, level="edges"):
+
+        assert level in {"nodes", "edges"}
+
+        if level == "edges":
+            weights = self.edge_weights_.copy()
+        if level == "nodes":
+            weights = self.node_weights_.copy()
+
+        weights_greater_than_zero = weights > 0
+        assert np.all(weights_greater_than_zero), "All weights must be greater than 0"
+        number_of_nonzero_weights = np.sum(weights_greater_than_zero)
+        return self.entropy(base=2)/np.log2(number_of_nonzero_weights)
+
+
+    def fit(
+        self,
+        X:pd.DataFrame,
+        y:pd.Series,
+        estimator,
+        feature_weight_attribute:str="auto",
+        remove_zero_weighted_features=True,
+        maximum_tries_to_remove_zero_weighted_features=1000,
+        ):
+        # X.columns should be frozensets for each feature
+        assert np.all(X.index == y.index)
+        assert np.all(X.columns.map(lambda x: isinstance(x, frozenset))), "X.columns features must be frozenset objects (i.e., edge) with at most 2 elements (i.e., nodes)"
+        X = X.copy()
+        
+        # Need to convert to str for sklearn
+        X.columns = X.columns.map(str)
+        # Get feature weight attribute
+        self.feature_weight_attribute_ = self._get_feature_importance_attribute(estimator, feature_weight_attribute)
+
+        # Estimator
+        features = X.columns
+        if is_classifier(estimator):
+            self.estimator_type_ = "classifier"
+        if is_regressor(estimator):
+            self.estimator_type_ = "regressor"
+
+        self.estimator_ = clone(estimator)
+        self.estimator_.fit(X=X, y=y)
+
+        _W = getattr(self.estimator_, self.feature_weight_attribute_)
+        _w = self._format_weights(_W)
+        mask_zero_weight_features = _w != 0
+
+        if np.sum(mask_zero_weight_features) < len(mask_zero_weight_features):
+            if remove_zero_weighted_features:
+                feature_weights = _w
+                features = X.columns[np.abs(feature_weights) > 0.0]
+                for j in range(maximum_tries_to_remove_zero_weighted_features):
+                    X_query = X.loc[:,features]
+    
+                    self.estimator_.fit(
+                        X=X_query, 
+                        y=y,
+                    )
+                    _W = getattr(self.estimator_, self.feature_weight_attribute_)
+                    _w = self._format_weights(_W)
+                    feature_weights = _w
+                    mask_zero_weight_features = _w != 0
+    
+                    if np.all(mask_zero_weight_features):
+                        if self.verbose > 0:
+                            features_kept = list(features)
+                            features_removed = set(X.columns) - set(features)
+                            if self.verbose > 1:
+                                print("[Success][Try={}]: Removed all zero weighted features.\n\nThe following features remain:\n{}\n\nThe following features were removed:\n{}".format(j+1, "\n".join(features_kept), "\n".join(features_removed)), file=sys.stderr)
+                            else:
+                                print("[Success][Try={}]: Removed all zero weighted features. N={} feature remain and N={} features were removed".format(j+1, len(features_kept), len(features_removed)), file=sys.stderr)
+
+                        break
+                    else:
+                        if self.verbose > 2:
+                            print("[...][Try={}]: Removing {} features as they have zero weight in fitted model: {}".format(j+1, len(mask_zero_weight_features) - np.sum(mask_zero_weight_features), X_query.columns[~mask_zero_weight_features].tolist()), file=sys.stderr)
+                        features = X_query.columns[mask_zero_weight_features].tolist()
+
+        # Get edge weights
+        W = getattr(self.estimator_, self.feature_weight_attribute_)
+        w = self._format_weights(W)
+        self.edge_weights_ = pd.Series(w, index=features, name="Edge Weight")
+        
+        # Convert strings to frozensets
+        self.edge_weights_.index = self.edge_weights_.index.map(eval)
+        
+        # Get sign of edge weights
+        self.edge_weight_signs_ = np.sign(self.edge_weights_)
+        self.edge_weight_signs_.name = "Edge Sign"
+        self.signed_ = min(self.edge_weight_signs_) < 0
+        
+        # Absolute value of edge weights
+        self.edge_weights_ = np.abs(self.edge_weights_)
+        
+        # Normalize edge weights
+        if self.normalize_edge_weights:
+            self.edge_weights_ = self.edge_weights_/np.sum(self.edge_weights_)
+
+        # Construct graph
+        self.graph_ = nx.Graph(name=self.name)
+        for edge, weight in self.edge_weights_.items():
+            n = len(edge)
+            assert 1 <= n <=2, f"Edges should have only 1 or 2 nodes not {n}: {edge}"
+            sign = self.edge_weight_signs_[edge]
+            
+            edge = tuple(edge)
+            if len(edge) == 2:
+                node_a, node_b = edge
+                self.graph_.add_edge(node_a, node_b, weight=weight, sign=sign)
+            else:
+                if not self.remove_self_interactions:
+                    node_a = edge[0]
+                    node_b = node_a
+                    self.graph_.add_edge(node_a, node_b, weight=weight, sign=sign)
+                    
+        # Get node and edge list and update edge weight ordering
+        self.nodes_ = pd.Index(list(self.graph_.nodes()), name="Nodes")
+        self.edges_ = pd.Index(list(map(frozenset, self.graph_.edges())), name="Edges")
+        self.edge_weights_ = self.edge_weights_[self.edges_]
+        self.node_weights_ = pd.Series(dict(nx.degree(self.graph_, weight="weight")), name="Node Weights")
+        self.node_weights_ = self.node_weights_[self.nodes_]
+        # Divide by 2 because edge weights are counted twice
+        self.node_weights_ = self.node_weights_/2
+
+        # Normalize node weights
+        if self.normalize_node_weights:
+            self.node_weights_ = self.node_weights_/np.sum(self.node_weights_)
+
+        # Numbers
+        self.number_of_nodes_ = len(self.nodes_)
+        self.number_of_edges_ = len(self.edges_)
+        self.edge_weight_evenness_ = self.evenness("edges")
+        self.node_weight_evenness_ = self.evenness("nodes")
+        self.total_edge_connectivity_ = self.sum("edges")
+        self.total_node_connectivity_ = self.sum("nodes")
+
+        # Data
+        self.X_ = X.loc[:,features]
+        self.X_.columns = self.X_.columns.map(eval)
+        self.y_ = y.copy()
+        self.observations_ = self.X_.index
+        self.number_of_observations_ = self.X_.shape[0]
+        
+        if self.estimator_type_ == "classifier":
+            self.classes_ = self.estimator_.classes_
+            self.number_of_classes_ = len(self.classes_)
+            
+        self.is_fitted = True
+        
+        return self
+        
+    @check_packages(["matplotlib"])
+    def _plot_weights_bar(
+        self,
+        weights,
+        xlabel,
+        color="black",
+        ylabel="$W$",
+        title=None,
+        figsize=(13,3), 
+        linecolor="black",
+        style="seaborn-white",
+        ax=None, 
+        alpha=0.382, 
+        xtick_rotation=90,
+        show_xgrid=False,
+        show_ygrid=True,
+        show_xticks=True, 
+        xlabel_kws=dict(), 
+        ylabel_kws=dict(), 
+        xticklabel_kws=dict(), 
+        yticklabel_kws=dict(),
+        title_kws=dict(),
+        ascending:bool=None,
+        ):
+        import matplotlib.pyplot as plt
+        assert self.is_fitted, "Please .fit model before using this method"
+
+        with plt.style.context(style):
+            _title_kws = {"fontsize":16, "fontweight":"bold"}; _title_kws.update(title_kws)
+            _xlabel_kws = {"fontsize":15}; _xlabel_kws.update(xlabel_kws)
+            _ylabel_kws = {"fontsize":15}; _ylabel_kws.update(ylabel_kws)
+            _xticklabel_kws = {"fontsize":12, "rotation":xtick_rotation}; _xticklabel_kws.update(xticklabel_kws)
+            _yticklabel_kws = {"fontsize":12}; _yticklabel_kws.update(yticklabel_kws)
+            
+            if ax is None:
+                fig, ax = plt.subplots(figsize=figsize)
+            else:
+                fig = plt.gcf()
+                
+            if ascending is not None:
+                weights = weights.sort_values(ascending=ascending)
+            weights.plot(kind="bar", color=color,edgecolor=linecolor, ax=ax)
+
+            if show_xticks:
+                ax.set_xticklabels(ax.get_xticklabels(), **_xticklabel_kws)
+            else:
+                ax.set_xticklabels([], fontsize=12)
+                
+            ax.set_xlabel(xlabel, **_xlabel_kws)
+            ax.set_ylabel(ylabel, **_ylabel_kws)
+            ax.set_yticklabels(map(lambda x:"%0.2f"%x, ax.get_yticks()), **_yticklabel_kws)
+            
+            if title:
+                ax.set_title(title, **_title_kws)
+            if show_xgrid:
+                ax.xaxis.grid(True)
+            if show_ygrid:
+                ax.yaxis.grid(True)
+                
+            return fig, ax
+            
+
+    def plot_node_weights(
+        self,
+        xlabel="Nodes",
+        **kwargs,
+        ):
+
+        weights = self.node_weights_.copy()
+
+        return self._plot_weights_bar(weights=weights, xlabel=xlabel, **kwargs)
+
+    def plot_edge_weights(
+        self,
+        xlabel="Edges",
+        **kwargs,
+        ):
+
+        weights = self.edge_weights_.copy()
+
+        return self._plot_weights_bar(weights=weights, xlabel=xlabel, **kwargs)
+        
+    @check_packages(["matplotlib"])
+    def plot_graph(
+        self,
+        pos=None,
+        node_colors="darkslategray",
+        edge_colors=None,
+        node_classes=None,
+        class_colors=None,
+        node_sizes="degree",
+        nodesize_scaling=1e4,
+        show_node_legend=True,
+        title="auto",
+        figsize=(8,5), 
+        style="seaborn-white",
+        ax=None, 
+        node_alpha=0.382, 
+        edge_alpha=0.382, 
+        show_node_labels=True,
+        show_xgrid=False,
+        show_ygrid=True,
+        title_kws=dict(),
+        ascending:bool=None,
+        edgeweight_scaling=20.0,
+        cmap="auto",
+        vmin="auto",
+        vmax="auto",
+        show_cbar=True,
+        cbar_label="auto",
+        cbar_pos=[0.925, 0.1, 0.015, 0.8],
+        border=False,
+        node_kws=dict(),
+        edge_kws=dict(),
+        node_label_kws=dict(),
+        cbar_kws=dict(),
+        cbar_tick_kws=dict(),
+        cbar_label_kws=dict(),
+        legend_kws=dict(),
+        ):
+        import matplotlib.pyplot as plt
+        assert self.is_fitted, "Please .fit model before using this method"
+
+        with plt.style.context(style):
+            
+            if ax is None:
+                fig, ax = plt.subplots(figsize=figsize)
+            else:
+                fig = plt.gcf()
+
+            # Default cmap
+            CMAP_DIVERGING = plt.cm.coolwarm
+
+            # Default kwargs
+            _title_kws = {"fontsize":16, "fontweight":"bold"}; _title_kws.update(title_kws)
+            _node_kws = {"alpha":node_alpha}; _node_kws.update(node_kws)
+            _edge_kws = {"alpha":edge_alpha}; _edge_kws.update(edge_kws)
+            _cbar_tick_kws = {}; _cbar_tick_kws.update(cbar_tick_kws)
+            _cbar_kws = {}; _cbar_kws.update(cbar_kws)
+            _cbar_label_kws = {"fontsize":14}; _cbar_label_kws.update(cbar_label_kws)
+            _legend_kws = {"fontsize":12, "markerscale":2,"frameon":True, "fancybox":True, "shadow":True, "loc":'upper center', "bbox_to_anchor":(0.5, -0.05)} 
+            if node_classes is not None:
+                assert hasattr(node_classes, "__getitem__"), "`node_classes` must be a dictionary or pd.Series"
+                number_of_classes = len(set(dict(node_classes).values()))
+                _legend_kws["ncols"] = min(number_of_classes, 5)
+                
+            _legend_kws.update(legend_kws)
+
+            # Position if  one isn't available
+            if pos is None:
+                pos = nx.nx_agraph.graphviz_layout(self.graph_, prog="neato")
+
+            # Node colors
+            if class_colors is None:
+                if node_colors is None:
+                    node_colors = "darkslategray"
+                if isinstance(node_colors, str):
+                    node_colors = np.asarray([node_colors]*self.number_of_nodes_)
+            else:
+                assert node_classes is not None, "If `class_colors` is provided then `node_classes` must also be provided"
+                assert hasattr(class_colors, "__getitem__"), "`class_colors` must be a dictionary or pd.Series"
+                node_classes = node_classes[self.nodes_]
+                node_colors = node_classes.map(lambda id_node: class_colors[id_node])
+
+                if show_node_legend:
+                    legend_handles = self._format_mpl_legend_handles(class_colors, label_specific_kws=None, marker="o", markeredgecolor="black", markeredgewidth=1)
+                    ax.legend(*legend_handles, **_legend_kws)
+                    
+            if isinstance(node_colors, pd.Series):
+                node_colors = node_colors[self.nodes_].values
+            _node_kws["node_color"] = node_colors
+            
+            # Node sizes
+            if isinstance(node_sizes, str):
+                if node_sizes == "degree":
+                    node_sizes = self.node_weights_.copy()
+                    
+            if isinstance(node_sizes, (float,int)):
+                node_sizes = np.asarray([node_sizes]*self.number_of_nodes_)
+                
+            node_sizes = np.asarray(node_sizes)
+            
+            node_sizes = node_sizes * nodesize_scaling
+            
+            _node_kws["node_size"] = node_sizes
+            
+
+            # Edge colors
+            signed = self.edge_weight_signs_.min() < 0
+            if cmap == "auto":
+                if edge_colors is None:
+                    if signed:
+                        cmap = CMAP_DIVERGING
+                    else:
+                        cmap = None
+                else:
+                    cmap = None
+                    
+            # If no cmap then set the edge colors
+            if cmap is None:
+                if edge_colors is None:
+                    edge_colors = "black"
+                if isinstance(edge_colors, str):
+                    edge_colors = np.asarray([edge_colors]*self.number_of_edges_)
+                if isinstance(edge_colors, pd.Series):
+                    assert set(edge_colors.index) == set(self.edges_)
+                    edge_colors = edge_colors[self.edges_]
+
+            # If there is a cmap then set the value limits and transform colors based on cmap
+            else:
+                max_edge_weight = self.edge_weights_.max()
+                min_edge_weight = self.edge_weights_.min()
+    
+                if signed:
+                    if vmax == "auto":
+                        vmax = max_edge_weight
+                    if vmin == "auto":
+                        vmin = -max_edge_weight                    
+                else:
+                    if vmax == "auto":
+                        vmax = max_edge_weight
+                    if vmin == "auto":
+                        vmin = min_edge_weight
+                # _edge_kws["edge_cmap"] = cmap
+                # _edge_kws["edge_vmin"] = vmin
+                # _edge_kws["edge_vmax"] = vmax
+                continuous_color_mapper = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax))
+                signed_weights = self.edge_weights_ * self.edge_weight_signs_
+                edge_colors = signed_weights.map(lambda w: continuous_color_mapper.to_rgba(w)[:-1])
+    
+                if show_cbar:
+                    if cbar_label == "auto":
+                        cbar_label = "Predictive Capacity"
+                        if self.normalize_edge_weights:
+                            cbar_label += " [ $W_{}~$ ]".format(self.feature_weight_attribute_[:-1])
+                        else:
+                            # cbar_label += " [ " + r"$W_{\text{%s}}$ ]"%(self.feature_weight_attribute_[:-1]) # r'$W_{\text{coef}}$'
+                            cbar_label += r" [ $W_{\mathrm{%s}}$ ]" % (self.feature_weight_attribute_[:-1])
+
+                    # Set parameters
+                    ax_cbar = fig.add_axes(cbar_pos)
+                    continuous_color_mapper._A = []
+                
+                    # Color bar
+                    cbar = fig.colorbar(continuous_color_mapper, cax=ax_cbar, **_cbar_kws)
+                    ax_cbar.tick_params(**_cbar_tick_kws)
+                    
+                    # Labels
+                    if cbar_label:
+                        cbar.set_label(cbar_label, **_cbar_label_kws)
+                        
+            if isinstance(edge_colors, pd.Series):
+                edge_colors = edge_colors.values
+                
+            _edge_kws["edge_color"] = edge_colors
+
+            # Edge weights
+            _edge_kws["width"] = self.edge_weights_ * edgeweight_scaling
+                
+            # Plotting
+            nx.draw_networkx_edges(self.graph_, pos=pos, ax=ax,  **_edge_kws)
+            nx.draw_networkx_nodes(self.graph_, pos=pos,  ax=ax, **_node_kws)
+            if show_node_labels:
+                nx.draw_networkx_labels(self.graph_, pos=pos, ax=ax, **node_label_kws)
+
+            if title == "auto":
+                title = self.name
+            if title is not None:
+                ax.set_title(title, **_title_kws)
+            if not border:
+                ax.axis(False)
+    
+            return fig, ax
+
+    def summary(
+        self,
+        into=pd.DataFrame,
+        ):
+        assert self.is_fitted, "Please .fit model before using this method"
+        output = pd.Series(OrderedDict([
+            ("estimator_type", self.estimator_type_),
+            ("algorithm", self.estimator_.__class__.__name__),
+            ("estimator", self.estimator_),
+            ("signed_edge_weights", self.signed_),
+            ("$N_{Observations}$", self.number_of_observations_),
+            ("$N_{Classes}$", self.number_of_classes_ if hasattr(self, "number_of_classes_") else np.nan),
+            ("$N_{Nodes}$", self.number_of_nodes_),
+            ("$N_{Edges}$", self.number_of_edges_),
+            ("$N_{Edges}$/$N_{Nodes}$", self.number_of_edges_/self.number_of_nodes_),
+            ("$Evenness_{Nodes}$", self.node_weight_evenness_),
+            ("$Evenness_{Edges}$", self.edge_weight_evenness_),
+            ("$k_{Total}$", self.total_edge_connectivity_),
+
+        ]), name=self.name)
+        if into == pd.Series:
+            return output
+        if into == pd.DataFrame:
+            return output.to_frame()

@@ -3,7 +3,7 @@
 # =======
 # Version
 # =======
-__version__= "2023.9.5"
+__version__= "2023.9.25"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -27,6 +27,8 @@ __functions__ = [
     "density",
     "centralization",
     "heterogeneity",
+    "entropy",
+    "evenness",
     "topological_overlap_measure",
     "community_detection",
     "edge_cluster_cooccurrence",
@@ -38,6 +40,7 @@ __classes__ = [
     'CategoricalEngineeredFeature',
     'Symmetric',
     "ClusteredNetwork",
+    "AggregateNetwork",
     # "Network",
     ]
 

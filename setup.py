@@ -27,5 +27,6 @@ name='ensemble_networkx',
         "xarray >= 0.15",
         "soothsayer_utils >= 2022.6.24",
         "compositional >= 2023.8.28",
+        "scikit-learn >= 1.0",
       ],
 )
