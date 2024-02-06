@@ -1481,7 +1481,7 @@ class CategoricalEngineeredFeature(object):
         # Aggregate features
         results = dict()
         for engineered_feature, initial_features in pv(self.engineered_to_initial_features_.items(), description="Aggregating engineered features"):
-            X_subset = X[initial_features]
+            X_subset = X[sorted(initial_features)]
             aggregate = X_subset.apply(aggregate_fn, axis=1)
             results[engineered_feature] = aggregate
         df_aggregate = pd.DataFrame(results)
@@ -1713,6 +1713,9 @@ class ClusteredNetwork(object):
         n = len(header.split("\n")[0])
         fields = [
             header,
+        ]
+        if self.is_fitted:
+            fields += [
             pad*" " + "* Algorithm: {}".format(self.algorithm),
             pad*" " + "* Minimum edge cooccurrence rate: {}".format(self.minimum_cooccurrence_rate),
             pad*" " + "* Number of iterations: {}".format(self.n_iter),

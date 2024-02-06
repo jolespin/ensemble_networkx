@@ -1,7 +1,12 @@
+#### Pending:
 
+* Error when viewing `ClusteredNetwork` that has not been fit. 
+* Conversion from `pd.DataFrame` to `Symmetric` doesn't preserve order (happened in `Soothsayer Agglomerative`).
 
 #### Completed:
 
+* 2024.2.5 - Fixed `__repr__` for unfitted `ClusteredNetwork` objects.
+* 2024.2.5 - Fixed error from indexing using set objects (`X_subset = X[initial_features]`)
 * 2023.9.25 - Added `AggregateNetwork` class, `evenness/entropy` calculations, and `.mad` for median absolute devation to `Symmetry`.
 * 2023.9.5 - Changed `method="biweight_midcorrelation"` to `method="bicor"`.  Changed default method to `pearson` instead of `rho` to generalize (though, please use `rho`, `phi`, or `pcorr_bshrink` for compositional data).  Added `partial_correlation_with_basis_shrinkage` support from `comositional` package using `method="pcorr_bshrink"` to use similar terminology with `Propr` and `ppcorr` R packages.
 * 2023.8.15 - Added `ClusteredNetwork` for wrapper around `community_detection` and `edge_cluster_cooccurrence` (formerly known as `cluster_homogeneity`).
@@ -19,6 +24,8 @@
 
 
 #### Pending:  
+* Add option to include confidence intervals and MAD to graph with `convert_network`
+* Add `weight` attribute to `convert_network`
 * Move arguments in `.fit` to `__init__` to better reflect usage in `scikit-learn`.
 * Since iGraph is a dependency, just make code cleaner without the workarounds for not having it as a dependency
 * Use `edge_weights_` and `node_weights_` in `Symmetric` objects like with `AggregateNetworks`? Are `Symmetric` objects immutable? Don't want node connectivity to be calclulated, the underlying network modified, and then will be inaccurate.

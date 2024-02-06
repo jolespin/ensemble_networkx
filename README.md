@@ -5,7 +5,7 @@ High-level [Ensemble](https://en.wikipedia.org/wiki/Ensemble_averaging_(machine_
 #### Dependencies:
 Compatible for Python 3.
 
-    panda
+    pandas
     numpy
     scipy
     networkx
