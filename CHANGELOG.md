@@ -5,6 +5,8 @@
 
 #### Completed:
 
+* Added `nodes_ordering` to `Symmetric` and uses this in `convert_network`.  To avoid situations where the order changes between conversions of `pd.DataFrame` and `Symmetric` objects, these conversions must be done explicitly. 
+* 2024.5.30 - Added `grouped_node_connectivity_from_numpy`, `grouped_node_connectivity_from_pandas_dataframe`, `group_connectivity_from_numpy`, and `group_connectivity_from_pandas_dataframe`.  Also rebuilt `connectivity` so it uses these functions and added support for masking outliers. Now able to output either node or group-level connectivities.
 * 2024.2.5 - Fixed `__repr__` for unfitted `ClusteredNetwork` objects.
 * 2024.2.5 - Fixed error from indexing using set objects (`X_subset = X[initial_features]`)
 * 2023.9.25 - Added `AggregateNetwork` class, `evenness/entropy` calculations, and `.mad` for median absolute devation to `Symmetry`.

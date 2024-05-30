@@ -3,7 +3,7 @@
 # =======
 # Version
 # =======
-__version__= "2024.2.5"
+__version__= "2024.5.30"
 __author__ = "Josh L. Espinoza"
 __email__ = "jespinoz@jcvi.org, jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -24,6 +24,10 @@ __functions__ = [
     "convert_network",
 ] + [
     "connectivity",
+    "grouped_node_connectivity_from_numpy", 
+    "grouped_node_connectivity_from_pandas_dataframe", 
+    "group_connectivity_from_numpy", 
+    "group_connectivity_from_pandas_dataframe",
     "density",
     "centralization",
     "heterogeneity",
