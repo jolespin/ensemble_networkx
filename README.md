@@ -460,7 +460,7 @@ SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone])
     * Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=42.188 KB)
 ```
 
-#### Cluster networks using Leiden or Louvain community detection
+#### Clustered networks using Leiden or Louvain community detection
 We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`)
 
 ```python
