@@ -30,7 +30,6 @@ pip install git+https://github.com/jolespin/ensemble_networkx
 #### Source:
 * Migrated from [`soothsayer`](https://github.com/jolespin/soothsayer)
 
-
 #### Supported metrics: 
 * [Compositional data](https://en.wikipedia.org/wiki/Compositional_data) (e.g., counts data, [NGS](https://www.illumina.com/science/technology/next-generation-sequencing.html), etc.)
 	* [**Do not use** Pearson, Spearman, Kendall-Tau, Biweight Midcorrelation for compositional data](https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1004075).  
@@ -177,6 +176,111 @@ EnsembleAssociationNetwork(Name:Binary, Metric: mcc)
     * Ensemble (memory=3.777 MB)
     * Statistics (['mean', 'var', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=399.742 KB)
 ```
+
+
+#### Differential ensemble association networks
+We are going to create a differential between setosa and not-setosa samples.
+
+```python
+X,y = syu.get_iris_data(["X", "y"])
+y_setosaornot = y.map(lambda x: {True:"setosa", False:"not_setosa"}[x == "setosa"])
+
+# Differential network between setosa and not setosa
+dn = enx.DifferentialEnsembleAssociationNetwork(name="Iris")
+dn.fit(X, y_setosaornot, reference="setosa", treatment="not_setosa", metric="rho")
+print(dn)
+
+========================================================================================================
+DifferentialEnsembleAssociationNetwork(Name:Iris, Reference: setosa, Treatment: not_setosa, Metric: rho)
+========================================================================================================
+    * Number of nodes (None): 4
+    * Number of edges (None): 6
+    * Observation type: None
+    ----------------------------------------------------------------------------------------------------
+    | Parameters
+    ----------------------------------------------------------------------------------------------------
+    * n_iter: 1000
+    * sampling_size: 50
+    * random_state: 0
+    * with_replacement: True
+    * transformation: None
+    * memory: 105.539 KB
+    ----------------------------------------------------------------------------------------------------
+    | Data
+    ----------------------------------------------------------------------------------------------------
+    * Features (n=150, m=4, memory=9.930 KB)
+    ----------------------------------------------------------------------------------------------------
+    | Intermediate
+    ----------------------------------------------------------------------------------------------------
+    * Reference Ensemble (memory=47.496 KB)
+    * Treatment Ensemble (memory=47.496 KB)
+    ----------------------------------------------------------------------------------------------------
+    | Terminal
+    ----------------------------------------------------------------------------------------------------
+    * Initial Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'])
+    * Comparative Statistics (['wasserstein_distance', 'mannwhitneyu|stat', 'mannwhitneyu|p_value'], memory=364 B)
+    * Differential Statistics (['median'], memory=268 B)
+
+```
+
+We can look at individual stats for each class: 
+
+```python
+dn.ensemble_reference_.stats_
+
+Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
+Edges						
+(sepal_width, sepal_length)	0.786607	0.043967	0.655605	0.866409	125.652750	5.186232e-28
+(petal_length, sepal_length)	0.460913	0.090514	0.236955	0.662517	10.686368	4.780625e-03
+(petal_width, sepal_length)	-0.600863	0.019191	-0.644792	-0.548529	33.238974	6.056873e-08
+(sepal_width, petal_length)	0.261425	0.095604	0.012081	0.483333	11.792565	2.749648e-03
+(sepal_width, petal_width)	-0.599378	0.031315	-0.673050	-0.514876	25.564313	2.810476e-06
+(petal_length, petal_width)	-0.513017	0.033226	-0.592368	-0.425776	7.823623	2.000423e-02
+
+dn.ensemble_treatment_.stats_
+
+Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
+Edges						
+(sepal_width, sepal_length)	0.341311	0.051657	0.217615	0.460566	1.117749	0.571852
+(petal_length, sepal_length)	-0.019897	0.054220	-0.151335	0.109942	0.923136	0.630295
+(petal_width, sepal_length)	-0.781452	0.017277	-0.820192	-0.729637	25.201274	0.000003
+(sepal_width, petal_length)	-0.596316	0.037117	-0.678457	-0.493624	23.866671	0.000007
+(sepal_width, petal_width)	-0.627446	0.027775	-0.687832	-0.555307	11.590521	0.003042
+(petal_length, petal_width)	0.046047	0.043560	-0.063424	0.154860	0.228881	0.891865
+
+```
+
+We can also look stats that compare the distributions of each edge between the 2 conditions: 
+
+```python
+dn.stats_comparative_
+
+	wasserstein_distance	mannwhitneyu|stat	mannwhitneyu|p_value
+Edges			
+(sepal_width, sepal_length)	0.434245	999756.0	0.000000e+00
+(petal_length, sepal_length)	0.477957	998548.0	0.000000e+00
+(petal_width, sepal_length)	0.179624	999994.0	0.000000e+00
+(sepal_width, petal_length)	0.851155	1000000.0	0.000000e+00
+(sepal_width, petal_width)	0.028351	675085.0	7.047032e-42
+(petal_length, petal_width)	0.556989	0.0	0.000000e+00
+```
+
+Lastly, we can get the differentials between 2 statistics calculated for each conditions.  We would use this as our resulting differential network: 
+
+
+```python
+dn.stats_differential_
+
+	median
+Edges	
+(sepal_width, sepal_length)	-0.445296
+(petal_length, sepal_length)	-0.480810
+(petal_width, sepal_length)	-0.180589
+(sepal_width, petal_length)	-0.857740
+(sepal_width, petal_width)	-0.028068
+(petal_length, petal_width)	0.559064
+```
+
 
 #### Simple case of creating sample-specific perturbation networks for compositional data using [Rho Proportionality](https://pubmed.ncbi.nlm.nih.gov/26762323/) and confidence interval of [2.5, 97.5]
 
@@ -356,52 +460,6 @@ SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone])
     * Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'], memory=42.188 KB)
 ```
 
-#### Feature engineering using categories
-
-Let's engineer some categories by collapsing by some predefined category. Check out `Phylogenomic Functional Categories` in [Espinoza et al. 2022](https://academic.oup.com/pnasnexus/article/1/5/pgac239/6762943) for how these are used in practice.
-
-
-```python
-from soothsayer_utils import get_iris_data
-from scipy import stats
-import pandas as pd
-import ensemble_networkx as enx
-
-X, y = get_iris_data(["X","y"])
-# Usage
-cef = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
-
-# Add categories
-category_1 = pd.Series(X.columns.map(lambda x:x.split("_")[0]), X.columns)
-cef.add_category(
-    name_category="leaf_type", 
-    mapping=category_1,
-)
-# Optionally add scaling factors, statistical tests, and summary statistics
-# Compile all of the data
-cef.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
-# Unpacking engineered groups: 100%|██████████| 1/1 [00:00<00:00, 2974.68it/s]
-# Organizing feature sets: 100%|██████████| 4/4 [00:00<00:00, 17403.75it/s]
-# Compiling synopsis [Basic Feature Info]: 100%|██████████| 2/2 [00:00<00:00, 32768.00it/s]
-# Compiling synopsis [Scaling Factor Info]: 100%|██████████| 2/2 [00:00<00:00, 238.84it/s]
-
-# View the engineered features
-cef.synopsis_
-#   initial_features        number_of_features      leaf_type(level:0)      scaling_factors sum(scaling_factors)    mean(scaling_factors)   sem(scaling_factors)    std(scaling_factors)
-# leaf_type                                                         
-# sepal     [sepal_width, sepal_length]     2       sepal   [458.6, 876.5]  1335.1  667.55  208.95  208.95
-# petal     [petal_length, petal_width]     2       petal   [563.7, 179.90000000000003]     743.6   371.8   191.9   191.9
-
-# Transform a dataset using the defined categories
-cef.fit_transform(X, aggregate_fn=np.sum)
-# leaf_type sepal   petal
-# sample            
-# iris_0    8.6     1.6
-# iris_1    7.9     1.6
-# iris_2    7.9     1.5
-# iris_3    7.7     1.7
-```
-
 #### Cluster networks using Leiden or Louvain community detection
 We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`)
 
@@ -471,106 +529,110 @@ sym = cn.to_symmetric()
 
 ```
 
-#### Differential ensemble association networks
-We are going to create a differential between setosa and not-setosa samples.
+#### Bidirectional clustered networks using Leiden or Louvain community detection
+In associations networks, we often have both positive and negative associations which should be analyzed separately.  With the `BiDirectionalClusteredNetwork` we can split positive and negative associations into separate subgraphs, perform community detection, then merge the clustered graphs.
 
-```python
-X,y = syu.get_iris_data(["X", "y"])
-y_setosaornot = y.map(lambda x: {True:"setosa", False:"not_setosa"}[x == "setosa"])
-
-# Differential network between setosa and not setosa
-dn = enx.DifferentialEnsembleAssociationNetwork(name="Iris")
-dn.fit(X, y_setosaornot, reference="setosa", treatment="not_setosa", metric="rho")
-print(dn)
-
-========================================================================================================
-DifferentialEnsembleAssociationNetwork(Name:Iris, Reference: setosa, Treatment: not_setosa, Metric: rho)
-========================================================================================================
-    * Number of nodes (None): 4
-    * Number of edges (None): 6
-    * Observation type: None
-    ----------------------------------------------------------------------------------------------------
-    | Parameters
-    ----------------------------------------------------------------------------------------------------
-    * n_iter: 1000
-    * sampling_size: 50
-    * random_state: 0
-    * with_replacement: True
-    * transformation: None
-    * memory: 105.539 KB
-    ----------------------------------------------------------------------------------------------------
-    | Data
-    ----------------------------------------------------------------------------------------------------
-    * Features (n=150, m=4, memory=9.930 KB)
-    ----------------------------------------------------------------------------------------------------
-    | Intermediate
-    ----------------------------------------------------------------------------------------------------
-    * Reference Ensemble (memory=47.496 KB)
-    * Treatment Ensemble (memory=47.496 KB)
-    ----------------------------------------------------------------------------------------------------
-    | Terminal
-    ----------------------------------------------------------------------------------------------------
-    * Initial Statistics (['median', 'median_abs_deviation', 'CI(5%)', 'CI(95%)', 'normaltest|stat', 'normaltest|p_value'])
-    * Comparative Statistics (['wasserstein_distance', 'mannwhitneyu|stat', 'mannwhitneyu|p_value'], memory=364 B)
-    * Differential Statistics (['median'], memory=268 B)
 
 ```
+from sklearn.datasets import make_classification
 
-We can look at individual stats for each class: 
+# Create dataset
+n_samples=1000
+X, y = make_classification(n_samples=n_samples, n_features=10, n_classes=2, n_clusters_per_class=1, random_state=0)
+X = pd.DataFrame(X)
 
-```python
-dn.ensemble_reference_.stats_
+# Compute associations
+df_corr = X.corr()
 
-Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
-Edges						
-(sepal_width, sepal_length)	0.786607	0.043967	0.655605	0.866409	125.652750	5.186232e-28
-(petal_length, sepal_length)	0.460913	0.090514	0.236955	0.662517	10.686368	4.780625e-03
-(petal_width, sepal_length)	-0.600863	0.019191	-0.644792	-0.548529	33.238974	6.056873e-08
-(sepal_width, petal_length)	0.261425	0.095604	0.012081	0.483333	11.792565	2.749648e-03
-(sepal_width, petal_width)	-0.599378	0.031315	-0.673050	-0.514876	25.564313	2.810476e-06
-(petal_length, petal_width)	-0.513017	0.033226	-0.592368	-0.425776	7.823623	2.000423e-02
+# Convert associations to graph
+graph = enx.convert_network(df_corr, nx.Graph, tol=1e-10)
 
-dn.ensemble_treatment_.stats_
-
-Statistics	median	median_abs_deviation	CI(5%)	CI(95%)	normaltest|stat	normaltest|p_value
-Edges						
-(sepal_width, sepal_length)	0.341311	0.051657	0.217615	0.460566	1.117749	0.571852
-(petal_length, sepal_length)	-0.019897	0.054220	-0.151335	0.109942	0.923136	0.630295
-(petal_width, sepal_length)	-0.781452	0.017277	-0.820192	-0.729637	25.201274	0.000003
-(sepal_width, petal_length)	-0.596316	0.037117	-0.678457	-0.493624	23.866671	0.000007
-(sepal_width, petal_width)	-0.627446	0.027775	-0.687832	-0.555307	11.590521	0.003042
-(petal_length, petal_width)	0.046047	0.043560	-0.063424	0.154860	0.228881	0.891865
-
+# Cluster positive and negative associations then merge into single clustered graph
+bdcn = enx.BiDirectionalClusteredNetwork()
+bdcn.fit(graph)
+bdcn
+# Detecting communities via `leiden` algorithm: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [00:00<00:00, 8034.76it/s]
+# Converting clustered graph
+# Computing node connectivity
+# Computing cluster connectivity
+# Detecting communities via `leiden` algorithm: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [00:00<00:00, 12542.40it/s]
+# Converting clustered graph
+# Computing node connectivity
+# Computing cluster connectivity
+# ========================================================================
+# BiDirectionalClusteredNetwork(Name:None, NodeType: None, EdgeType: None)
+# ========================================================================
+#     * Algorithm: leiden
+#     * Minimum edge cooccurrence rate: 1.0
+#     * Number of iterations: 100
+#     * Number of nodes clustered (Union): 10 (100.00%)
+#     * Number of nodes clustered (Intersection): 8 (80.00%)
+# -------------------
+# ClusteredNetwork(+)
+# -------------------
+#     * Number of nodes clustered: 8 (80.00%)
+#     * Number of edges clustered: 4 (19.05%)
+#     --------------------------------------------------------------------
+#     | Cluster Sizes (N = 4)
+#     --------------------------------------------------------------------
+#     Leiden[+]_1    2
+#     Leiden[+]_2    2
+#     Leiden[+]_3    2
+#     Leiden[+]_4    2
+# -------------------
+# ClusteredNetwork(-)
+# -------------------
+#     * Number of nodes clustered: 10 (100.00%)
+#     * Number of edges clustered: 17 (70.83%)
+#     --------------------------------------------------------------------
+#     | Cluster Sizes (N = 2)
+#     --------------------------------------------------------------------
+#     Leiden[+]_1    8
+#     Leiden[+]_2    2
 ```
 
-We can also look stats that compare the distributions of each edge between the 2 conditions: 
+#### Feature engineering using categories
 
-```python
-dn.stats_comparative_
-
-	wasserstein_distance	mannwhitneyu|stat	mannwhitneyu|p_value
-Edges			
-(sepal_width, sepal_length)	0.434245	999756.0	0.000000e+00
-(petal_length, sepal_length)	0.477957	998548.0	0.000000e+00
-(petal_width, sepal_length)	0.179624	999994.0	0.000000e+00
-(sepal_width, petal_length)	0.851155	1000000.0	0.000000e+00
-(sepal_width, petal_width)	0.028351	675085.0	7.047032e-42
-(petal_length, petal_width)	0.556989	0.0	0.000000e+00
-```
-
-Lastly, we can get the differentials between 2 statistics calculated for each conditions.  We would use this as our resulting differential network: 
+Let's engineer some categories by collapsing by some predefined category. Check out `Phylogenomic Functional Categories` in [Espinoza et al. 2022](https://academic.oup.com/pnasnexus/article/1/5/pgac239/6762943) for how these are used in practice.
 
 
 ```python
-dn.stats_differential_
+from soothsayer_utils import get_iris_data
+from scipy import stats
+import pandas as pd
+import ensemble_networkx as enx
 
-	median
-Edges	
-(sepal_width, sepal_length)	-0.445296
-(petal_length, sepal_length)	-0.480810
-(petal_width, sepal_length)	-0.180589
-(sepal_width, petal_length)	-0.857740
-(sepal_width, petal_width)	-0.028068
-(petal_length, petal_width)	0.559064
+X, y = get_iris_data(["X","y"])
+# Usage
+cef = enx.CategoricalEngineeredFeature(name="Iris", observation_type="sample")
+
+# Add categories
+category_1 = pd.Series(X.columns.map(lambda x:x.split("_")[0]), X.columns)
+cef.add_category(
+    name_category="leaf_type", 
+    mapping=category_1,
+)
+# Optionally add scaling factors, statistical tests, and summary statistics
+# Compile all of the data
+cef.compile(scaling_factors=X.sum(axis=0), stats_tests=[stats.normaltest])
+# Unpacking engineered groups: 100%|██████████| 1/1 [00:00<00:00, 2974.68it/s]
+# Organizing feature sets: 100%|██████████| 4/4 [00:00<00:00, 17403.75it/s]
+# Compiling synopsis [Basic Feature Info]: 100%|██████████| 2/2 [00:00<00:00, 32768.00it/s]
+# Compiling synopsis [Scaling Factor Info]: 100%|██████████| 2/2 [00:00<00:00, 238.84it/s]
+
+# View the engineered features
+cef.synopsis_
+#   initial_features        number_of_features      leaf_type(level:0)      scaling_factors sum(scaling_factors)    mean(scaling_factors)   sem(scaling_factors)    std(scaling_factors)
+# leaf_type                                                         
+# sepal     [sepal_width, sepal_length]     2       sepal   [458.6, 876.5]  1335.1  667.55  208.95  208.95
+# petal     [petal_length, petal_width]     2       petal   [563.7, 179.90000000000003]     743.6   371.8   191.9   191.9
+
+# Transform a dataset using the defined categories
+cef.fit_transform(X, aggregate_fn=np.sum)
+# leaf_type sepal   petal
+# sample            
+# iris_0    8.6     1.6
+# iris_1    7.9     1.6
+# iris_2    7.9     1.5
+# iris_3    7.7     1.7
 ```
-

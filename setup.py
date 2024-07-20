@@ -1,14 +1,28 @@
 from setuptools import setup
 
+from os import path
+
+script_directory = path.abspath(path.dirname(__file__))
+
 # Version
+package_name = "ensemble_networkx"
 version = None
-with open("ensemble_networkx/__init__.py", "r") as f:
+with open(path.join(script_directory, package_name, '__init__.py')) as f:
     for line in f.readlines():
         line = line.strip()
         if line.startswith("__version__"):
             version = line.split("=")[-1].strip().strip('"')
-assert version is not None, "Check version in ensemble_networkx/__init__.py"
+assert version is not None, f"Check version in {package_name}/__init__.py"
 
+
+requirements = list()
+with open(path.join(script_directory, 'requirements.txt')) as f:
+    for line in f.readlines():
+        line = line.strip()
+        if line:
+            if not line.startswith("#"):
+                requirements.append(line)
+                
 setup(
 name='ensemble_networkx',
     version=version,
@@ -18,15 +32,5 @@ name='ensemble_networkx',
     author_email='jespinoz@jcvi.org',
     license='BSD-3',
     packages=["ensemble_networkx"],
-    install_requires=[
-        "pandas >= 1",
-        "numpy >= 1.16",
-        'scipy >= 1',
-        "networkx >= 2",
-        "igraph",
-        "xarray >= 0.15",
-        "soothsayer_utils >= 2022.6.24",
-        "compositional >= 2023.8.28",
-        "scikit-learn >= 1.0",
-      ],
+    install_requires=requirements,
 )

@@ -1,0 +1,10 @@
+graft ensemble_networkx
+include setup.py
+include LICENSE
+include README.md
+include requirements.txt
+global-exclude *.py[cod]
+global-exclude Icon*
+global-exclude .DS_Store
+exclude *.egg-info
+exclude dist

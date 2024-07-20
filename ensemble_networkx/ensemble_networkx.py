@@ -1768,7 +1768,7 @@ class ClusteredNetwork(object):
         self,
         graph:nx.Graph,
         algorithm="leiden",
-        n_iter=100,
+        n_iter=1000,
         minimum_cooccurrence_rate=1.0,
         cluster_prefix="auto",
         random_state=0,
@@ -1784,7 +1784,7 @@ class ClusteredNetwork(object):
         self.graph_initial_ = graph.copy()
         self.nodes_initial_ = pd.Index(list(self.graph_initial_.nodes()), name="Nodes[Initial]")
         self.edges_initial_ = pd.Index(list(map(frozenset, self.graph_initial_.edges())), name="Edges[Initial]")
-        self.weighted_initial_ = convert_network(data=self.graph_initial_, into=pd.Series)
+        self.weights_initial_ = convert_network(data=self.graph_initial_, into=pd.Series)
         self.number_of_nodes_initial_ = len(self.nodes_initial_)
         self.number_of_edges_initial_ = len(self.edges_initial_)
 
@@ -1808,14 +1808,38 @@ class ClusteredNetwork(object):
             self.cluster_to_nodes_[id_cluster] = set(nodes)
             for id_node in nodes:
                 self.node_to_cluster_[id_node] = id_cluster
+            
                 
         self.cluster_to_nodes_ = pd.Series(self.cluster_to_nodes_, name="Clusters[Collapsed]")
         self.node_to_cluster_ = pd.Series(self.node_to_cluster_, name="Clusters[Expanded]")[self.nodes_clustered_]
         self.number_of_clusters_ = len(self.cluster_to_nodes_)
-        
-        # Community size
         self.cluster_sizes_ = self.cluster_to_nodes_.map(len)
+        
+        # Connectivity
+        print("Converting clustered graph", file=sys.stderr)
+        df_network = convert_network(self.graph_initial_, pd.DataFrame).loc[self.nodes_clustered_,self.nodes_clustered_].fillna(0)
+        # Nodes
+        print("Computing node connectivity", file=sys.stderr)
+        self.node_connectivity_clustered_ = connectivity(
+            df_network, 
+            self.node_to_cluster_,
+            return_type="nodes",
+            )
+        
+        self.cluster_to_hub_ = self.node_connectivity_clustered_["intra-group_connectivity"].groupby(self.node_to_cluster_).idxmax()
+        self.node_connectivity_clustered_["hub"] = self.node_connectivity_clustered_.index.map(lambda id_node: id_node in self.cluster_to_hub_.values)
+        self.node_connectivity_clustered_.insert(0, "cluster", self.node_to_cluster_)
 
+        # Clusters
+        print("Computing cluster connectivity", file=sys.stderr)
+        self.cluster_connectivity_ = connectivity(
+            df_network, 
+            self.node_to_cluster_,
+            return_type="groups",
+            )
+        self.cluster_connectivity_.insert(0, "hub", self.cluster_to_hub_)
+        del df_network
+        
         self.is_fitted = True
 
         return self
@@ -1872,7 +1896,8 @@ class ClusteredNetwork(object):
     # =======
     def __repr__(self):
         pad = 4
-        header = format_header("ClusteredNetwork(Name:{}, weight_dtype: {})".format(self.name, self.weights_clustered_.dtype),line_character="=")
+        header = format_header("ClusteredNetwork(Name:{}, NodeType: {}, EdgeType: {})".format(self.name, self.node_type, self.edge_type),line_character="=")
+
         n = len(header.split("\n")[0])
         fields = [
             header,
@@ -1882,13 +1907,219 @@ class ClusteredNetwork(object):
             pad*" " + "* Algorithm: {}".format(self.algorithm),
             pad*" " + "* Minimum edge cooccurrence rate: {}".format(self.minimum_cooccurrence_rate),
             pad*" " + "* Number of iterations: {}".format(self.n_iter),
-            pad*" " + "* Number of nodes clustered ({}): {} ({:0.2f}%)".format(self.node_type, self.number_of_nodes_clustered_, 100*(self.number_of_nodes_clustered_/self.number_of_nodes_initial_)),
-            pad*" " + "* Number of edges clustered ({}): {} ({:0.2f}%)".format(self.edge_type, self.number_of_edges_clustered_, 100*(self.number_of_edges_clustered_/self.number_of_edges_initial_)),
+            pad*" " + "* Number of nodes clustered: {} ({:0.2f}%)".format(self.number_of_nodes_clustered_, 100*(self.number_of_nodes_clustered_/self.number_of_nodes_initial_)),
+            pad*" " + "* Number of edges clustered: {} ({:0.2f}%)".format(self.number_of_edges_clustered_, 100*(self.number_of_edges_clustered_/self.number_of_edges_initial_)),
             
             *map(lambda line:pad*" " + line, format_header("| Cluster Sizes (N = {})".format(self.number_of_clusters_), "-", n=n-pad).split("\n")),
             *map(lambda line: pad*" " + line, repr(self.cluster_sizes_).split("\n")[:-1]),
             ]
 
+        return "\n".join(fields)
+    
+class BiDirectionalClusteredNetwork(object):
+    def __init__(
+        self, 
+        name=None,
+        node_type=None,
+        edge_type=None,
+        ):
+        self.name = name
+        self.node_type = node_type
+        self.edge_type = edge_type
+        self.is_fitted = False
+
+    def fit(
+        self,
+        graph:nx.Graph,
+        algorithm="leiden",
+        n_iter=1000,
+        minimum_cooccurrence_rate=1.0,
+        positive_cluster_prefix="auto",
+        negative_cluster_prefix="auto",
+        random_state=0,
+        weight:str="weight", 
+        algo_kws=dict(),
+        ):
+        if positive_cluster_prefix == "auto":
+            positive_cluster_prefix = "{}[+]_".format(algorithm.capitalize())
+        if negative_cluster_prefix == "auto":
+            negative_cluster_prefix = "{}[+]_".format(algorithm.capitalize())
+        self.n_iter = n_iter
+        self.algorithm = algorithm
+        self.minimum_cooccurrence_rate = minimum_cooccurrence_rate
+        self.graph_initial_ = graph.copy()
+        self.nodes_initial_ = pd.Index(list(self.graph_initial_.nodes()), name="Nodes[Initial]")
+        self.edges_initial_ = pd.Index(list(map(frozenset, self.graph_initial_.edges())), name="Edges[Initial]")
+        self.weights_initial_ = convert_network(data=self.graph_initial_, into=pd.Series)
+        self.number_of_nodes_initial_ = len(self.nodes_initial_)
+        self.number_of_edges_initial_ = len(self.edges_initial_)
+
+        # Edge weights
+        build_edge_weights = list()
+
+        # Positive
+        self.clustered_network_positive_is_empty_ = True
+        self.clustered_network_positive_ = ClusteredNetwork(f"{self.name}[+]" if self.name else self.name, node_type=self.node_type, edge_type=self.edge_type)
+        graph_positive = convert_network(self.weights_initial_[lambda w: w > 0], into=nx.Graph)
+        if graph_positive.number_of_edges():
+            self.clustered_network_positive_.fit(
+                graph=graph_positive,
+                algorithm=algorithm,
+                n_iter=n_iter,
+                minimum_cooccurrence_rate=minimum_cooccurrence_rate,
+                cluster_prefix=positive_cluster_prefix,
+                random_state=random_state,
+                weight = weight,
+                algo_kws=algo_kws,
+                )
+            self.clustered_network_positive_is_empty_ = False
+            build_edge_weights.append(self.clustered_network_positive_.weights_clustered_)
+        else:
+            warnings.warn("No positive edges")
+        del graph_positive
+
+        # Negative
+        self.clustered_network_negative_is_empty_ = True
+        self.clustered_network_negative_ = ClusteredNetwork(f"{self.name}[-]" if self.name else self.name, node_type=self.node_type, edge_type=self.edge_type)
+        graph_negative=convert_network(self.weights_initial_[lambda w: w < 0].abs(), into=nx.Graph)
+        if graph_negative.number_of_edges():
+            self.clustered_network_negative_.fit(
+                graph=graph_negative,
+                algorithm=algorithm,
+                n_iter=n_iter,
+                minimum_cooccurrence_rate=minimum_cooccurrence_rate,
+                cluster_prefix=positive_cluster_prefix,
+                random_state=random_state,
+                weight = weight,
+                algo_kws=algo_kws,
+                )
+            self.clustered_network_negative_is_empty_ = False
+            build_edge_weights.append(self.clustered_network_negative_.weights_clustered_ * -1)
+        else:
+            warnings.warn("No negative edges")
+        del graph_negative
+ 
+        conditions = [
+            not self.clustered_network_positive_is_empty_, 
+            not self.clustered_network_negative_is_empty_, 
+        ]
+        if not any(conditions):
+            raise ValueError("No clustered edges")
+
+        # Merge consensus positive and negative edges
+        self.weights_clustered_ = pd.concat(build_edge_weights)
+        self.graph_clustered_ = convert_network(
+            data=self.weights_clustered_,
+            into=nx.Graph,
+        )
+        self.weights_clustered_ = self.weights_clustered_.loc[list(map(frozenset, self.graph_clustered_.edges()))]
+        del build_edge_weights
+
+        self.nodes_clustered_ = pd.Index(list(self.graph_clustered_.nodes()), name="Nodes[Clustered]")
+        self.edges_clustered_ = pd.Index(self.weights_clustered_.index, name="Edges[Clustered]")
+        self.number_of_nodes_clustered_ = len(self.nodes_clustered_)
+        self.number_of_edges_clustered_ = len(self.edges_clustered_)
+ 
+        if all(conditions):
+            self.nodes_clustered_intersection_ = pd.Index(list(
+                set(self.clustered_network_positive_.nodes_clustered_) & set(self.clustered_network_negative_.nodes_clustered_),
+            ), name="Nodes[Clustered(Intersection)]")
+        else:
+            if conditions[0]:
+                self.nodes_clustered_intersection_ = self.clustered_network_positive_.nodes_clustered_
+            if conditions[1]:
+                self.nodes_clustered_intersection_ = self.clustered_network_negative_.nodes_clustered_
+        self.number_of_nodes_clustered_intersection_ = len(self.nodes_clustered_intersection_)
+        
+        
+        self.is_fitted = True
+        return self
+
+    def fit_transform(
+        self,
+        graph,
+        **params,
+        ):
+        self.fit(graph=graph, **params)
+        return self.graph_clustered_
+
+    # Convert
+    # =======
+    def to_pandas_series(self):
+        assert self.is_fitted, "Please fit model before converting clustered graph"
+        return self.weights_clustered_
+        
+    def to_pandas_dataframe(self, fill_diagonal=None, vertical=False, **convert_network_kws):
+        assert self.is_fitted, "Please fit model before converting clustered graph"
+        df = convert_network(
+            data=self.graph_clustered_, 
+            into=pd.DataFrame,
+            fill_diagonal=fill_diagonal,
+            **convert_network_kws,
+        )
+            
+        if vertical:
+            df = df.stack().to_frame().reset_index()
+            df.columns = ["Node_A", "Node_B", "Weight"]
+            df.index.name = "Edge_Index"
+            
+        return df
+
+    def to_igraph(self, **attrs):
+
+        return convert_network(
+            data=self.graph_clustered_, 
+            into=ig.Graph,
+            **attrs,
+        )
+
+
+    def to_symmetric(self, **attrs):
+
+        return convert_network(
+            data=self.graph_clustered_, 
+            into=Symmetric,
+            **attrs,
+        )
+
+    
+    # =======
+    # Built-in
+    # =======
+    def __repr__(self):
+        pad = 4
+        header = format_header("BiDirectionalClusteredNetwork(Name:{}, NodeType: {}, EdgeType: {})".format(self.name, self.node_type, self.edge_type),line_character="=")
+
+        n = len(header.split("\n")[0])
+        fields = [
+            header,
+        ]
+        if self.is_fitted:
+            fields += [
+            pad*" " + "* Algorithm: {}".format(self.algorithm),
+            pad*" " + "* Minimum edge cooccurrence rate: {}".format(self.minimum_cooccurrence_rate),
+            pad*" " + "* Number of iterations: {}".format(self.n_iter),
+            pad*" " + "* Number of nodes clustered (Union): {} ({:0.2f}%)".format(self.number_of_nodes_clustered_, 100*(self.number_of_nodes_clustered_/self.number_of_nodes_initial_)),
+            pad*" " + "* Number of nodes clustered (Intersection): {} ({:0.2f}%)".format(self.number_of_nodes_clustered_intersection_, 100*(self.number_of_nodes_clustered_intersection_/self.number_of_nodes_initial_)),
+
+            ]
+        if not self.clustered_network_positive_is_empty_:
+            fields += [
+            format_header("ClusteredNetwork(+)",line_character="-"),
+            pad*" " + "* Number of nodes clustered: {} ({:0.2f}%)".format(self.clustered_network_positive_.number_of_nodes_clustered_, 100*(self.clustered_network_positive_.number_of_nodes_clustered_/self.clustered_network_positive_.number_of_nodes_initial_)),
+            pad*" " + "* Number of edges clustered: {} ({:0.2f}%)".format(self.clustered_network_positive_.number_of_edges_clustered_, 100*(self.clustered_network_positive_.number_of_edges_clustered_/self.clustered_network_positive_.number_of_edges_initial_)),
+            *map(lambda line:pad*" " + line, format_header("| Cluster Sizes (N = {})".format(self.clustered_network_positive_.number_of_clusters_), "-", n=n-pad).split("\n")),
+            *map(lambda line: pad*" " + line, repr(self.clustered_network_positive_.cluster_sizes_).split("\n")[:-1]),
+            ]
+        if not self.clustered_network_negative_is_empty_:
+            fields += [
+            format_header("ClusteredNetwork(-)",line_character="-"),
+            pad*" " + "* Number of nodes clustered: {} ({:0.2f}%)".format(self.clustered_network_negative_.number_of_nodes_clustered_, 100*(self.clustered_network_negative_.number_of_nodes_clustered_/self.clustered_network_negative_.number_of_nodes_initial_)),
+            pad*" " + "* Number of edges clustered: {} ({:0.2f}%)".format(self.clustered_network_negative_.number_of_edges_clustered_, 100*(self.clustered_network_negative_.number_of_edges_clustered_/self.clustered_network_negative_.number_of_edges_initial_)),
+            *map(lambda line:pad*" " + line, format_header("| Cluster Sizes (N = {})".format(self.clustered_network_negative_.number_of_clusters_), "-", n=n-pad).split("\n")),
+            *map(lambda line: pad*" " + line, repr(self.clustered_network_negative_.cluster_sizes_).split("\n")[:-1]),
+            ]
+            
         return "\n".join(fields)
     
 # =============================
