@@ -533,7 +533,7 @@ sym = cn.to_symmetric()
 In associations networks, we often have both positive and negative associations which should be analyzed separately.  With the `BiDirectionalClusteredNetwork` we can split positive and negative associations into separate subgraphs, perform community detection, then merge the clustered graphs.
 
 
-```
+```python
 from sklearn.datasets import make_classification
 
 # Create dataset
@@ -550,6 +550,7 @@ graph = enx.convert_network(df_corr, nx.Graph, tol=1e-10)
 # Cluster positive and negative associations then merge into single clustered graph
 bdcn = enx.BiDirectionalClusteredNetwork()
 bdcn.fit(graph)
+
 bdcn
 # Detecting communities via `leiden` algorithm: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 100/100 [00:00<00:00, 8034.76it/s]
 # Converting clustered graph
