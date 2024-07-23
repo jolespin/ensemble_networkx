@@ -13,10 +13,10 @@ Compatible for Python 3.
     soothsayer_utils
     compositional
     
-#### Citations (Debut):
+#### Citations:
    
    * Nabwera HM+, Espinoza JL+, Worwui A, Betts M, Okoi C, Sesay AK, Bancroft R, Agbla SC, Jarju S, Bradbury RS, Colley M, Jallow AT, Liu J, Houpt ER, Prentice AM, Antonio M, Bernstein RM, Dupont CL+, Kwambana-Adams BA+. *Interactions between fecal gut microbiome, enteric pathogens, and energy regulating hormones among acutely malnourished rural Gambian children*. EBioMedicine. 2021 Oct 22;73:103644. [doi: 10.1016/j.ebiom.2021.103644](https://doi.org/10.1016/j.ebiom.2021.103644). PMID: 34695658.
-
+   * Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, [doi: 10.1093/pnasnexus/pgac239](https://doi.org/10.1093/pnasnexus/pgac239)
 
 #### Install:
 ```
@@ -62,6 +62,9 @@ Here we randomly sample 100 times, calculate the associations for each draw, and
 
 If you choose `sampling_size` float between `0 < x ≤ 1.0` then the number of samples drawn will be `x * n` where `n` is the number of samples.  If an integer is used then it will grab that number of samples for each draw.
 
+**If you use this method, please cite:**  
+
+Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, https://doi.org/10.1093/pnasnexus/pgac239
 
 ```python
 import soothsayer_utils as syu
@@ -180,6 +183,10 @@ EnsembleAssociationNetwork(Name:Binary, Metric: mcc)
 
 #### Differential ensemble association networks
 We are going to create a differential between setosa and not-setosa samples.
+
+**If you use this method, please cite:** 
+
+Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, https://doi.org/10.1093/pnasnexus/pgac239
 
 ```python
 X,y = syu.get_iris_data(["X", "y"])
@@ -461,7 +468,12 @@ SampleSpecificPerturbationNetwork(Name:Iris, Reference: Reference(setosa[clone])
 ```
 
 #### Clustered networks using Leiden or Louvain community detection
-We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`)
+We are going to run Leiden community detection but since it is stochastic and not deterministic, we are going to use 100 different random seeds and only consider clusters that consistent (i.e., `minimum_cooccurrence_rate=1.0`). 
+
+**If you use this method, please cite:**  
+
+Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, https://doi.org/10.1093/pnasnexus/pgac239
+
 
 ```python
 # Get graph
@@ -532,6 +544,9 @@ sym = cn.to_symmetric()
 #### Bidirectional clustered networks using Leiden or Louvain community detection
 In associations networks, we often have both positive and negative associations which should be analyzed separately.  With the `BiDirectionalClusteredNetwork` we can split positive and negative associations into separate subgraphs, perform community detection, then merge the clustered graphs.
 
+**If you use this method, please cite:**  
+
+Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, https://doi.org/10.1093/pnasnexus/pgac239
 
 ```python
 from sklearn.datasets import make_classification
@@ -596,6 +611,9 @@ bdcn
 
 Let's engineer some categories by collapsing by some predefined category. Check out `Phylogenomic Functional Categories` in [Espinoza et al. 2022](https://academic.oup.com/pnasnexus/article/1/5/pgac239/6762943) for how these are used in practice.
 
+**If you use this method, please cite:**  
+
+Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, https://doi.org/10.1093/pnasnexus/pgac239
 
 ```python
 from soothsayer_utils import get_iris_data
