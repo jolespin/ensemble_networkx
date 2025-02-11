@@ -1,11 +1,14 @@
 
 #### Completed:
 
-* Changed `n_iter` default from 100 to 1000 in `ClusteredNetwork`.
-* Added `BiDirectionalClusteredNetwork` which is separates positive and negative weighted edges, clusters the graphs separately, then merges the clustered representations.
-* Calculate `hubs` for `ClusteredNetwork`
-* Added `node_connectivity_clustered_` and `cluster_connectivity_` to `ClusteredNetwork`
-* Added `nodes_ordering` to `Symmetric` and uses this in `convert_network`.  To avoid situations where the order changes between conversions of `pd.DataFrame` and `Symmetric` objects, these conversions must be done explicitly. 
+* 2025.2.10 - Optimized `edge_cluster_cooccurrence`
+* 2025.2.10 - `community_detection` now allows for `igraph` inputs and is threaded
+* 2025.2.10 - If `data` and `into` are same type in `convert_network` then input is returned
+* 2024.7.xx - Changed `n_iter` default from 100 to 1000 in `ClusteredNetwork`.
+* 2024.7.xx - Added `BiDirectionalClusteredNetwork` which is separates positive and negative weighted edges, clusters the graphs separately, then merges the clustered representations.
+* 2024.7.xx - Calculate `hubs` for `ClusteredNetwork`
+* 2024.7.xx - Added `node_connectivity_clustered_` and `cluster_connectivity_` to `ClusteredNetwork`
+* 2024.7.xx - Added `nodes_ordering` to `Symmetric` and uses this in `convert_network`.  To avoid situations where the order changes between conversions of `pd.DataFrame` and `Symmetric` objects, these conversions must be done explicitly. 
 * 2024.5.30 - Added `grouped_node_connectivity_from_numpy`, `grouped_node_connectivity_from_pandas_dataframe`, `group_connectivity_from_numpy`, and `group_connectivity_from_pandas_dataframe`.  Also rebuilt `connectivity` so it uses these functions and added support for masking outliers. Now able to output either node or group-level connectivities.
 * 2024.2.5 - Fixed `__repr__` for unfitted `ClusteredNetwork` objects.
 * 2024.2.5 - Fixed error from indexing using set objects (`X_subset = X[initial_features]`)

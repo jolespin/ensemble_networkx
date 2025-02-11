@@ -16,12 +16,13 @@ import pandas as pd
 import numpy as np
 import networkx as nx
 import igraph as ig
-# import xarray as xr
+import xarray as xr
 from scipy import stats
 from scipy.special import comb
 from scipy.spatial.distance import squareform, pdist
 from sklearn.base import clone, is_classifier, is_regressor
 from sklearn.exceptions import ConvergenceWarning, UndefinedMetricWarning
+from joblib import Parallel, delayed
 
 # Compositional
 from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlation_with_basis_shrinkage
@@ -142,175 +143,178 @@ def convert_network(
     Add support for existing attributes to propogate to next level. Currently, Symmetric isn't supported so I removed it entirely.
     Add support for Hive objects
     """
-    input_category = get_symmetric_category(data)
-    output_category = get_symmetric_category(into)
-
-    assert output_category in {("pandas", "Series"), ("pandas", "DataFrame"), "Symmetric", "networkx", "igraph"}, "`data` must be either a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
-    assert isinstance(into, type), "`into` must be an instantiated object: a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
-    assert into not in {nx.MultiGraph, nx.MultiDiGraph},  "`into` cannot be a `Multi[Di]Graph`"
-    
-    assert not (node_subgraph is not None) & (edge_subgraph is not None), "Cannot create subgraph from `node_subgraph` and `edge_subgraph`"
-    if (nodes_ordering is not None) & (node_subgraph is not None):
-        assert set(nodes_ordering) == set(node_subgraph), "nodes_ordering elements must be the same as node_subgraph"
-        
-    if all([
-        input_category == "Symmetric",
-        output_category == ("pandas", "DataFrame"),
-        nodes_ordering is None,
-        ]):
-        raise Exception("Please provide `nodes_ordering` if input_type is Symmetric and output_type is pd.DataFrame.  Alternatively, use Symmetric's .to_pandas_dataframe() method")
-    
-    if all([
-        input_category == ("pandas", "DataFrame"),
-        output_category == "Symmetric",
-        ]):
-        raise Exception("Please provide instantiate a Symmetric object from a pd.DataFrame directly via `Symmetric(df)`")
-    
-    if all([
-        input_category == output_category,
-        node_subgraph is None, 
-        edge_subgraph is None, 
-        remove_self_interactions == False,
-        ]):
-        return data.copy()
-    
-    _attrs = dict()
-    
-    
-
-    # Convert to pd.Series
-    if input_category == "igraph":
-        # iGraph -> NetworkX
-        if all([
-            output_category == "network",
-            node_subgraph is None, 
-            edge_subgraph is None, 
-            remove_self_interactions == False,
-            ]):
-            return data.to_networkx(into)
-        else:
-            if data.is_directed():
-                warnings.warn("Currently conversions cannot handle directed graphs and will force into undirected configuration")
-            weights = data.es["weight"]
-            nodes = np.asarray(data.vs["name"])
-            edges = list(map(lambda edge_indicies: frozenset(nodes[list(edge_indicies)]), data.get_edgelist()))
-            data = pd.Series(weights, index=edges)
-            input_category == ("pandas", "Series")
-        
-    if input_category == "networkx":
-        # Update attrs
-        # _attrs.update(graph.data)
-        # NetworkX -> iGraph
-        if all([
-            output_category == "igraph",
-            node_subgraph is None, 
-            edge_subgraph is None, 
-            remove_self_interactions == False,
-            ]):
-            return ig.Graph.from_networkx(data)
-        else:
-            # Weights
-            edge_weights = dict()
-            for edge_data in data.edges(data=True):
-                edge = frozenset(edge_data[:-1])
-                weight = edge_data[-1]["weight"]
-                edge_weights[edge] = weight
-            data = pd.Series(edge_weights)
-            input_category == ("pandas", "Series")
-            
-    if input_category == ("pandas", "DataFrame"):
-        assert len(data.shape) == 2, "`data.shape` must be square (2 dimensions)"
-        assert np.all(data.index == data.columns), "`data.index` must equal `data.columns`"
-        # if assert_symmetry:
-        #     assert is_symmetrical(data, tol=tol, nans_ok=True), "`data` is not symmetric with tol=`{}` or try with `nans_ok=True`".format(tol)
-        # data = data.stack()
-        # data.index = data.index.map(frozenset)
-        
-        data = redundant_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol, nans_ok=True)
-        input_category == ("pandas", "Series")
-
-    if input_category == "Symmetric":
-        data = data.weights
-        input_category == ("pandas", "Series")
-        
-    
-    if input_category == ("pandas", "Series"):
-        if data.name is not None:
-            if "name" in _attrs:
-                if _attrs["name"] is None:
-                    _attrs["name"] = data.name
-            else:
-                _attrs["name"] = data.name
-
-    # Overwrite existing attrs with provided attrs
-    for k, v in attrs.items():
-        if v is not None:
-            _attrs[k] = v
-    
-    # Remove duplicates
-    data = data[~data.index.duplicated()]
-    
-    # Subgraphs
-    if node_subgraph is not None:
-        nodes = frozenset.union(*data.index)
-        node_subgraph = frozenset(node_subgraph)
-        assert node_subgraph <= nodes, "`node_subgraph` must be a subset of the nodes in `data`"
-        edge_subgraph = sorted(set(data.index[data.index.map(lambda edge: edge <= node_subgraph)]))
-        
-    if edge_subgraph is not None:
-        assert set(edge_subgraph) <= set(data.index), "`edge_subgraph` must be a subset of the edge set in `data`"
-        data = data[edge_subgraph]
-        
-    if remove_self_interactions:
-        data = data[data.index.map(lambda edge: len(edge) > 1)]
-        
-    # Missing values
-    if remove_missing_values:
-        data = data.dropna()
-    else:
-        if data.isnull().sum() > 0:
-            data = data.fillna(fill_missing_values_with)
-            
-    # Output
-    if output_category == ("pandas", "Series"):
-        data.name = _attrs.get("name", None)
+    if isinstance(data, into):
         return data
-    
-    if output_category == ("pandas", "DataFrame"):
-        df = condensed_to_redundant(data, fill_diagonal=fill_diagonal)
-        if nodes_ordering is not None:
-            nodes_ordering = pd.Index(nodes_ordering)
-            if not np.all(df.index == nodes_ordering):
-                df = df.loc[nodes_ordering, nodes_ordering]
-        return df
-    
-    if output_category == "networkx":
-        graph = into(**_attrs)
-        for edge, w in data.items():
-            if len(edge) == 1:
-                node_a = node_b = list(edge)[0]
+    else:
+        input_category = get_symmetric_category(data)
+        output_category = get_symmetric_category(into)
+
+        assert output_category in {("pandas", "Series"), ("pandas", "DataFrame"), "Symmetric", "networkx", "igraph"}, "`data` must be either a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
+        assert isinstance(into, type), "`into` must be an instantiated object: a pandas[Series, DataFrame], ensemble_networkx[Symmetric], networkx[Graph, DiGraph, OrdereredGraph, DiOrderedGraph], igraph[Graph]"
+        assert into not in {nx.MultiGraph, nx.MultiDiGraph},  "`into` cannot be a `Multi[Di]Graph`"
+        
+        assert not (node_subgraph is not None) & (edge_subgraph is not None), "Cannot create subgraph from `node_subgraph` and `edge_subgraph`"
+        if (nodes_ordering is not None) & (node_subgraph is not None):
+            assert set(nodes_ordering) == set(node_subgraph), "nodes_ordering elements must be the same as node_subgraph"
+            
+        if all([
+            input_category == "Symmetric",
+            output_category == ("pandas", "DataFrame"),
+            nodes_ordering is None,
+            ]):
+            raise Exception("Please provide `nodes_ordering` if input_type is Symmetric and output_type is pd.DataFrame.  Alternatively, use Symmetric's .to_pandas_dataframe() method")
+        
+        if all([
+            input_category == ("pandas", "DataFrame"),
+            output_category == "Symmetric",
+            ]):
+            raise Exception("Please provide instantiate a Symmetric object from a pd.DataFrame directly via `Symmetric(df)`")
+        
+        if all([
+            input_category == output_category,
+            node_subgraph is None, 
+            edge_subgraph is None, 
+            remove_self_interactions == False,
+            ]):
+            return data.copy()
+        
+        _attrs = dict()
+        
+        
+
+        # Convert to pd.Series
+        if input_category == "igraph":
+            # iGraph -> NetworkX
+            if all([
+                output_category == "network",
+                node_subgraph is None, 
+                edge_subgraph is None, 
+                remove_self_interactions == False,
+                ]):
+                return data.to_networkx(into)
             else:
-                node_a, node_b = list(edge)
-            graph.add_edge(node_a, node_b, weight=w)
-        return graph
-    
-    if output_category == "igraph":
-        graph = into() 
-        # nodes = sorted(flatten(data.index.map(list), unique=True))
-        nodes = sorted(frozenset.union(*data.index))
-        graph.add_vertices(nodes)
-        for edge, w in data.items():
-            if len(edge) == 1:
-                node_a = node_b = list(edge)[0]
+                if data.is_directed():
+                    warnings.warn("Currently conversions cannot handle directed graphs and will force into undirected configuration")
+                weights = data.es["weight"]
+                nodes = np.asarray(data.vs["name"])
+                edges = list(map(lambda edge_indicies: frozenset(nodes[list(edge_indicies)]), data.get_edgelist()))
+                data = pd.Series(weights, index=edges)
+                input_category == ("pandas", "Series")
+            
+        if input_category == "networkx":
+            # Update attrs
+            # _attrs.update(graph.data)
+            # NetworkX -> iGraph
+            if all([
+                output_category == "igraph",
+                node_subgraph is None, 
+                edge_subgraph is None, 
+                remove_self_interactions == False,
+                ]):
+                return ig.Graph.from_networkx(data)
             else:
-                node_a, node_b = list(edge)
-            graph.add_edge(node_a, node_b, weight=w)
-        for k, v in _attrs.items():
-            graph[k] = v
-        return graph
-    
-    if output_category == "Symmetric":
-        return Symmetric(data=data, **_attrs)
+                # Weights
+                edge_weights = dict()
+                for edge_data in data.edges(data=True):
+                    edge = frozenset(edge_data[:-1])
+                    weight = edge_data[-1]["weight"]
+                    edge_weights[edge] = weight
+                data = pd.Series(edge_weights)
+                input_category == ("pandas", "Series")
+                
+        if input_category == ("pandas", "DataFrame"):
+            assert len(data.shape) == 2, "`data.shape` must be square (2 dimensions)"
+            assert np.all(data.index == data.columns), "`data.index` must equal `data.columns`"
+            # if assert_symmetry:
+            #     assert is_symmetrical(data, tol=tol, nans_ok=True), "`data` is not symmetric with tol=`{}` or try with `nans_ok=True`".format(tol)
+            # data = data.stack()
+            # data.index = data.index.map(frozenset)
+            
+            data = redundant_to_condensed(data, assert_symmetry=assert_symmetry, tol=tol, nans_ok=True)
+            input_category == ("pandas", "Series")
+
+        if input_category == "Symmetric":
+            data = data.weights
+            input_category == ("pandas", "Series")
+            
+        
+        if input_category == ("pandas", "Series"):
+            if data.name is not None:
+                if "name" in _attrs:
+                    if _attrs["name"] is None:
+                        _attrs["name"] = data.name
+                else:
+                    _attrs["name"] = data.name
+
+        # Overwrite existing attrs with provided attrs
+        for k, v in attrs.items():
+            if v is not None:
+                _attrs[k] = v
+        
+        # Remove duplicates
+        data = data[~data.index.duplicated()]
+        
+        # Subgraphs
+        if node_subgraph is not None:
+            nodes = frozenset.union(*data.index)
+            node_subgraph = frozenset(node_subgraph)
+            assert node_subgraph <= nodes, "`node_subgraph` must be a subset of the nodes in `data`"
+            edge_subgraph = sorted(set(data.index[data.index.map(lambda edge: edge <= node_subgraph)]))
+            
+        if edge_subgraph is not None:
+            assert set(edge_subgraph) <= set(data.index), "`edge_subgraph` must be a subset of the edge set in `data`"
+            data = data[edge_subgraph]
+            
+        if remove_self_interactions:
+            data = data[data.index.map(lambda edge: len(edge) > 1)]
+            
+        # Missing values
+        if remove_missing_values:
+            data = data.dropna()
+        else:
+            if data.isnull().sum() > 0:
+                data = data.fillna(fill_missing_values_with)
+                
+        # Output
+        if output_category == ("pandas", "Series"):
+            data.name = _attrs.get("name", None)
+            return data
+        
+        if output_category == ("pandas", "DataFrame"):
+            df = condensed_to_redundant(data, fill_diagonal=fill_diagonal)
+            if nodes_ordering is not None:
+                nodes_ordering = pd.Index(nodes_ordering)
+                if not np.all(df.index == nodes_ordering):
+                    df = df.loc[nodes_ordering, nodes_ordering]
+            return df
+        
+        if output_category == "networkx":
+            graph = into(**_attrs)
+            for edge, w in data.items():
+                if len(edge) == 1:
+                    node_a = node_b = list(edge)[0]
+                else:
+                    node_a, node_b = list(edge)
+                graph.add_edge(node_a, node_b, weight=w)
+            return graph
+        
+        if output_category == "igraph":
+            graph = into() 
+            # nodes = sorted(flatten(data.index.map(list), unique=True))
+            nodes = sorted(frozenset.union(*data.index))
+            graph.add_vertices(nodes)
+            for edge, w in data.items():
+                if len(edge) == 1:
+                    node_a = node_b = list(edge)[0]
+                else:
+                    node_a, node_b = list(edge)
+                graph.add_edge(node_a, node_b, weight=w)
+            for k, v in _attrs.items():
+                graph[k] = v
+            return graph
+        
+        if output_category == "Symmetric":
+            return Symmetric(data=data, **_attrs)
     
 # ===================
 # Network Statistics
@@ -637,61 +641,147 @@ def topological_overlap_measure(
 # Community Detection
 # =======================================================
 # Graph community detection
-def community_detection(graph, n_iter:int=100, weight:str="weight", random_state:int=0, algorithm="leiden", algo_kws=dict()):
+# def community_detection(graph, n_iter:int=100, weight:str="weight", random_state:int=0, algorithm="leiden", algo_kws=dict()):
+#     assert isinstance(n_iter, int)
+#     assert isinstance(random_state, int)
+#     assert isinstance(algorithm, str)
+#     assert_acceptable_arguments(algorithm, {"louvain", "leiden"})
+    
+#     # Louvain    
+#     if algorithm == "louvain":
+#         try:
+#             from community import best_partition
+#         except ModuleNotFoundError:
+#             Exception("Please install `python-louvain` to use {} algorithm".format(algorithm))
+    
+#         # Keywords
+#         _algo_kws = {}
+#         _algo_kws.update(algo_kws)
+        
+#         graph = convert_network(graph, nx.Graph) 
+        
+#         def partition_function(graph, weight, random_state, algo_kws):
+#             return best_partition(graph, weight=weight, random_state=random_state, **algo_kws)
+        
+#     # Leiden
+#     if algorithm == "leiden":
+#         try:
+#             from leidenalg import find_partition, ModularityVertexPartition
+#         except ModuleNotFoundError:
+#             Exception("Please install `leidenalg` to use {} algorithm".format(algorithm))
+
+#         # Convert NetworkX to iGraph
+#         # graph = ig.Graph.from_networkx(graph)
+#         if not isinstance(graph, ig.Graph):
+#             graph = convert_network(graph, ig.Graph) 
+            
+#         nodes_list = np.asarray(graph.vs["name"])
+        
+#         # Keywords
+#         _algo_kws = {"partition_type":ModularityVertexPartition, "n_iterations":-1}
+#         _algo_kws.update(algo_kws)
+        
+#         def partition_function(graph, weight, random_state, algo_kws, nodes_list=nodes_list):
+#             node_to_partition = dict()
+#             for partition, nodes in enumerate(find_partition(graph, weights=weight, seed=random_state, **algo_kws)):
+#                 mapping = dict(zip(nodes_list[nodes], [partition]*len(nodes)))
+#                 node_to_partition.update(mapping)
+#             return node_to_partition
+    
+#     # Get partitions
+#     partitions = dict()
+#     for rs in pv(range(random_state, n_iter + random_state), "Detecting communities via `{}` algorithm".format(algorithm)):
+#         partitions[rs] = partition_function(graph=graph, weight=weight, random_state=rs, algo_kws=_algo_kws)
+        
+#     # Create DataFrame
+#     df = pd.DataFrame(partitions)
+#     df.index.name = "Node"
+#     df.columns.name = "Iteration"
+#     return df
+def community_detection(graph, n_iter: int = 100, weight: str = "weight", random_state: int = 0, 
+                                  algorithm: str = "leiden", converge_iter: int = -1, algo_kws: dict = dict(), 
+                                  n_jobs: int = 1):
+    """
+    Perform Leiden or Louvain community detection with parallel execution using joblib.
+
+    Parameters:
+    -----------
+    graph : ig.Graph or nx.Graph
+        Input graph object.
+    n_iter : int
+        Number of iterations (random seeds).
+    weight : str
+        Edge weight attribute.
+    random_state : int
+        Base random seed.
+    algorithm : str
+        Algorithm to use ("leiden" or "louvain").
+    converge_iter : int
+        Number of iterations for convergence (-1 for auto).
+    algo_kws : dict
+        Additional keyword arguments for the partition algorithm.
+    n_jobs : int
+        Number of parallel jobs (-1 uses all available CPUs).
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with node assignments for each iteration (columns = iterations, rows = nodes).
+    """
     assert isinstance(n_iter, int)
     assert isinstance(random_state, int)
     assert isinstance(algorithm, str)
-    assert_acceptable_arguments(algorithm, {"louvain", "leiden"})
-    
-    # Louvain    
+    assert algorithm in {"louvain", "leiden"}
+
+    # Louvain algorithm setup
     if algorithm == "louvain":
         try:
             from community import best_partition
         except ModuleNotFoundError:
-            Exception("Please install `python-louvain` to use {} algorithm".format(algorithm))
-    
-        # Keywords
-        _algo_kws = {}
-        _algo_kws.update(algo_kws)
+            raise Exception("Please install `python-louvain` to use the Louvain algorithm.")
         
-        graph = convert_network(graph, nx.Graph) 
-        
+        graph = convert_network(graph, nx.Graph)
+
         def partition_function(graph, weight, random_state, algo_kws):
             return best_partition(graph, weight=weight, random_state=random_state, **algo_kws)
-        
-    # Leiden
+
+    # Leiden algorithm setup
     if algorithm == "leiden":
         try:
             from leidenalg import find_partition, ModularityVertexPartition
         except ModuleNotFoundError:
-            Exception("Please install `leidenalg` to use {} algorithm".format(algorithm))
+            raise Exception("Please install `leidenalg` to use the Leiden algorithm.")
 
-        # Convert NetworkX to iGraph
-        # graph = ig.Graph.from_networkx(graph)
-        graph = convert_network(graph, ig.Graph) 
+        if not isinstance(graph, ig.Graph):
+            graph = convert_network(graph, ig.Graph)
         nodes_list = np.asarray(graph.vs["name"])
         
-        # Keywords
-        _algo_kws = {"partition_type":ModularityVertexPartition, "n_iterations":-1}
+        # Default and updated keyword arguments
+        _algo_kws = {"partition_type": ModularityVertexPartition, "n_iterations": converge_iter}
         _algo_kws.update(algo_kws)
-        
+
         def partition_function(graph, weight, random_state, algo_kws, nodes_list=nodes_list):
             node_to_partition = dict()
             for partition, nodes in enumerate(find_partition(graph, weights=weight, seed=random_state, **algo_kws)):
-                mapping = dict(zip(nodes_list[nodes], [partition]*len(nodes)))
+                mapping = dict(zip(nodes_list[nodes], [partition] * len(nodes)))
                 node_to_partition.update(mapping)
             return node_to_partition
-    
-    # Get partitions
-    partitions = dict()
-    for rs in pv(range(random_state, n_iter + random_state), "Detecting communities via `{}` algorithm".format(algorithm)):
-        partitions[rs] = partition_function(graph=graph, weight=weight, random_state=rs, algo_kws=_algo_kws)
-        
-    # Create DataFrame
-    df = pd.DataFrame(partitions)
-    df.index.name = "Node"
-    df.columns.name = "Iteration"
-    return df
+
+    # Parallel execution with joblib
+    def run_partition(random_seed):
+        return partition_function(graph=graph, weight=weight, random_state=random_seed, algo_kws=_algo_kws)
+
+    random_seeds = range(random_state, random_state + n_iter)
+    partitions = Parallel(n_jobs=n_jobs, backend="loky")(
+        delayed(run_partition)(seed) for seed in random_seeds
+    )
+
+    # Convert partitions to a DataFrame
+    partitions_df = pd.DataFrame(partitions).T
+    partitions_df.index.name = "Node"
+    partitions_df.columns.name = "Iteration"
+
+    return partitions_df
 
 # Cluster cooccurrence matrix
 def edge_cluster_cooccurrence(df:pd.DataFrame, edge_type="Edge", iteration_type="Iteration"):
@@ -740,35 +830,32 @@ def edge_cluster_cooccurrence(df:pd.DataFrame, edge_type="Edge", iteration_type=
     # https://stackoverflow.com/questions/58566957/how-to-transform-a-dataframe-of-cluster-class-group-labels-into-a-pairwise-dataf
 
 
-    # `x` is a table of (n=nodes, p=iterations)
+    # Get nodes and iterations
     nodes = df.index
     iterations = df.columns
     x = df.values
-    n,p = x.shape
+    n, p = x.shape
 
-    # `y` is an array of n tables, each having 1 row and p columns
-    y = x[:, None]
+    # Use broadcasting to compare clusters across all iterations
+    z = x[:, None, :] == x[None, :, :]  # Shape: (n, n, p)
 
-    # Using numpy broadcasting, `z` contains the result of comparing each
-    # table in `y` against `x`. So the shape of `z` is (n x n x p)
-    z = x == y
-
-    # Reshaping `z` by merging the first two dimensions
-    data = z.reshape((z.shape[0] * z.shape[1], z.shape[2]))
-
-    # Redundant pairs
-    redundant_pairs = list(map(lambda node:frozenset([node]), nodes))
+    # Keep only upper triangular pairs to avoid redundancies
+    triu_indices = np.triu_indices(n, k=1)  # Indices for unique pairs
+    unique_pairs = z[triu_indices]  # Shape: (num_pairs, p)
 
     # Create pairwise clustering matrix
+    edge_labels = [
+        frozenset([nodes[i], nodes[j]]) for i, j in zip(*triu_indices)
+    ]
+
     df_pairs = pd.DataFrame(
-        data=data,
-        index=pd.Index(list(map(frozenset, product(nodes,nodes))), name=edge_type),
+        data=unique_pairs,
+        index=pd.Index(edge_labels, name=edge_type),
         columns=pd.Index(iterations, name=iteration_type),
         dtype=int,
-    ).drop(redundant_pairs, axis=0)
+    )
 
-
-    return df_pairs[~df_pairs.index.duplicated(keep="first")]
+    return df_pairs
 
 # ==============================================================================
 # Associations and graph constructors
