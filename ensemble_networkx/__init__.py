@@ -4,7 +4,7 @@ from __future__ import print_function, division
 # =======
 # Version
 # =======
-__version__= "2025.2.11"
+__version__= "2025.2.11.post1"
 __author__ = "Josh L. Espinoza"
 __email__ = "jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -22,6 +22,7 @@ from collections.abc import Mapping, Hashable
 from itertools import combinations, product
 
 # Packages
+from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -789,7 +790,7 @@ def get_undirected_igraph_connected_components(graph, cluster_prefix="c", return
     
 def community_detection(graph, n_iter: int = 100, weight: str = "weight", random_state: int = 0, 
                                   algorithm: str = "leiden", converge_iter: int = -1, algo_kws: dict = dict(), 
-                                  n_jobs: int = 1, parallel_backend="threading"):
+                                  n_jobs: int = 1, parallel_backend="threading", progressbar_message="Community detection"):
     """
     Perform Leiden or Louvain community detection with parallel execution using joblib.
 
@@ -862,10 +863,14 @@ def community_detection(graph, n_iter: int = 100, weight: str = "weight", random
         return partition_function(graph=graph, weight=weight, random_state=random_seed, algo_kws=_algo_kws)
 
     random_seeds = range(random_state, random_state + n_iter)
-    partitions = Parallel(n_jobs=n_jobs, backend=parallel_backend)(
-        delayed(run_partition)(seed) for seed in random_seeds
-    )
-
+    if progressbar_message:
+        partitions = Parallel(n_jobs=n_jobs, backend=parallel_backend)(
+            delayed(run_partition)(seed) for seed in tqdm(random_seeds, desc=progressbar_message)
+        )
+    else:
+        partitions = Parallel(n_jobs=n_jobs, backend=parallel_backend)(
+            delayed(run_partition)(seed) for seed in random_seeds
+        )
     # Convert partitions to a DataFrame
     partitions_df = pd.DataFrame(partitions).T
     partitions_df.index.name = "Node"
@@ -876,78 +881,85 @@ def community_detection(graph, n_iter: int = 100, weight: str = "weight", random
 # Cluster cooccurrence matrix
 def community_membership_cooccurrence(df:pd.DataFrame, edge_type="Edge", iteration_type="Iteration"):
     """
-    # Create Graph
     from soothsayer_utils import get_iris_data
-    df_adj = get_iris_data(["X"]).iloc[:5].T.corr() + np.random.RandomState(0).normal(size=(5,5))
+    import networkx as nx
+    df_adj = get_iris_data(["X"]).T.corr().abs()
     graph = nx.from_pandas_adjacency(df_adj)
-    graph.nodes()
-    # NodeView(('sepal_length', 'sepal_width', 'petal_length', 'petal_width'))
 
     # Community detection (network clustering)
-    df_louvain = community_detection(graph, n_iter=10, algorithm="louvain")
-    df_louvain
-    # Partition	0	1	2	3	4	5	6	7	8	9
+    df_communities = community_detection(graph, n_iter=10, algorithm="leiden")
+    df_communities.head()
+    # Iteration	0	1	2	3	4	5	6	7	8	9
     # Node										
-    # iris_0	0	0	0	0	0	0	0	0	0	0
-    # iris_1	1	1	1	1	1	1	1	1	1	1
-    # iris_2	1	2	2	2	2	1	2	2	2	2
-    # iris_3	0	1	1	1	1	0	1	1	1	1
-    # iris_4	2	3	3	3	3	2	3	3	3	3
+    # iris_100	0	0	0	0	0	0	0	0	0	0
+    # iris_101	0	0	0	0	0	0	0	0	0	0
+    # iris_102	0	0	0	0	0	0	0	0	0	0
+    # iris_103	0	0	0	0	0	0	0	0	0	0
+    # iris_104	0	0	0	0	0	0	0	0	0	0
 
     # Determine cluster cooccurrence
-    df_community_membership = community_membership_cooccurrence(df_louvain)
-    df_community_membership
+    df_community_membership = community_membership_cooccurrence(df_communities)
+    df_community_membership.head()
     # Iteration	0	1	2	3	4	5	6	7	8	9
     # Edge										
-    # (iris_1, iris_0)	0	0	0	0	0	0	0	0	0	0
-    # (iris_2, iris_0)	0	0	0	0	0	0	0	0	0	0
-    # (iris_3, iris_0)	1	0	0	0	0	1	0	0	0	0
-    # (iris_4, iris_0)	0	0	0	0	0	0	0	0	0	0
-    # (iris_1, iris_2)	1	0	0	0	0	1	0	0	0	0
-    # (iris_3, iris_1)	0	1	1	1	1	0	1	1	1	1
-    # (iris_4, iris_1)	0	0	0	0	0	0	0	0	0	0
-    # (iris_3, iris_2)	0	0	0	0	0	0	0	0	0	0
-    # (iris_4, iris_2)	0	0	0	0	0	0	0	0	0	0
-    # (iris_4, iris_3)	0	0	0	0	0	0	0	0	0	0
+    # (iris_101, iris_100)	True	True	True	True	True	True	True	True	True	True
+    # (iris_102, iris_100)	True	True	True	True	True	True	True	True	True	True
+    # (iris_103, iris_100)	True	True	True	True	True	True	True	True	True	True
+    # (iris_104, iris_100)	True	True	True	True	True	True	True	True	True	True
+    # (iris_105, iris_100)	True	True	True	True	True	True	True	True	True	True
 
     node_pair_membership_cooccurrences = df_community_membership.mean(axis=1)
+    node_pair_membership_cooccurrences.head()
     # Edge
-    # (iris_3, iris_1)    0.8
+    # (iris_101, iris_100)    1.0
+    # (iris_102, iris_100)    1.0
+    # (iris_103, iris_100)    1.0
+    # (iris_104, iris_100)    1.0
+    # (iris_105, iris_100)    1.0
     # dtype: float64
-    
+
     node_pairs_with_consistent_membership = set(node_pair_membership_cooccurrences[lambda x: x == 1.0].index)
+    # node_pairs_with_consistent_membership
+    # {frozenset({'iris_136', 'iris_51'}),
+    #  frozenset({'iris_106', 'iris_118'}),
+    #  frozenset({'iris_103', 'iris_143'}),
+    #  frozenset({'iris_55', 'iris_68'}),
+    #  frozenset({'iris_116', 'iris_80'}),
+    #  ...
     """
 
     # Adapted from @code-different:
     # https://stackoverflow.com/questions/58566957/how-to-transform-a-dataframe-of-cluster-class-group-labels-into-a-pairwise-dataf
 
 
-    # Get nodes and iterations
-    nodes = df.index
+     # Convert to numpy array early for faster operations
+    X = df.values
+    nodes = df.index.values
     iterations = df.columns
-    x = df.values
-    n, p = x.shape
-
-    # Use broadcasting to compare clusters across all iterations
-    z = x[:, None, :] == x[None, :, :]  # Shape: (n, n, p)
-
-    # Keep only upper triangular pairs to avoid redundancies
-    triu_indices = np.triu_indices(n, k=1)  # Indices for unique pairs
-    unique_pairs = z[triu_indices]  # Shape: (num_pairs, p)
-
-    # Create pairwise clustering matrix
-    edge_labels = [
-        frozenset([nodes[i], nodes[j]]) for i, j in zip(*triu_indices)
-    ]
-
-    df_pairs = pd.DataFrame(
-        data=unique_pairs,
+    n_nodes = len(nodes)
+    
+    # Pre-allocate arrays with boolean dtype
+    n_pairs = (n_nodes * (n_nodes - 1)) // 2
+    result = np.empty((n_pairs, len(iterations)), dtype=bool)
+    
+    # Create node pairs once
+    pairs = np.array(list(combinations(range(n_nodes), 2)))
+    
+    # Vectorized comparison with boolean output
+    for i in range(len(iterations)):
+        col = X[:, i]
+        result[:, i] = col[pairs[:, 0]] == col[pairs[:, 1]]
+    
+    # Create edge labels efficiently
+    edge_labels = [frozenset([nodes[i], nodes[j]]) for i, j in pairs]
+    
+    # Create DataFrame directly - convert to int only at the end if needed
+    # Note: Pandas will automatically convert bool to int for compatibility
+    return pd.DataFrame(
+        data=result,
         index=pd.Index(edge_labels, name=edge_type),
         columns=pd.Index(iterations, name=iteration_type),
-        dtype=int,
     )
-
-    return df_pairs
 
 # ==============================================================================
 # Associations and graph constructors

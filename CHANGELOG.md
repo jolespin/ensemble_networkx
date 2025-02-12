@@ -1,6 +1,7 @@
 
 #### Completed:
 
+* 2025.2.11 - Optimized `community_membership_cooccurrence` to use boolean and no broadcasting
 * 2025.2.11 - Added `get_undirected_igraph_edgelist_indices` and `get_undirected_igraph_connected_components`
 * 2025.2.11 - Moved code to `__init__.py` and added `parallel_backend="threading"` to `community_detection`
 * 2025.2.11 - Change `edge_cluster_cooccurrence` to `community_membership_cooccurrence` because they are node pairs not edges
