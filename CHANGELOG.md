@@ -3,6 +3,7 @@
 
 * 2025.2.11 - Added `get_undirected_igraph_edgelist_indices` and `get_undirected_igraph_connected_components`
 * 2025.2.11 - Moved code to `__init__.py` and added `parallel_backend="threading"` to `community_detection`
+* 2025.2.11 - Change `edge_cluster_cooccurrence` to `community_membership_cooccurrence` because they are node pairs not edges
 * 2025.2.10 - Optimized `edge_cluster_cooccurrence`
 * 2025.2.10 - `community_detection` now allows for `igraph` inputs and is threaded
 * 2025.2.10 - If `data` and `into` are same type in `convert_network` then input is returned
@@ -31,7 +32,6 @@
 
 
 #### Pending:  
-* Change `edge_cluster_cooccurrence` to `community_membership_cooccurrence` because they are node pairs not edges
 * Add option to include confidence intervals and MAD to graph with `convert_network`
 * Add `weight` attribute to `convert_network`
 * Move arguments in `.fit` to `__init__` to better reflect usage in `scikit-learn`.
