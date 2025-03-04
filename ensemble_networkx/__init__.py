@@ -4,7 +4,7 @@ from __future__ import print_function, division
 # =======
 # Version
 # =======
-__version__= "2025.2.11.post1"
+__version__= "2025.3.3"
 __author__ = "Josh L. Espinoza"
 __email__ = "jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -41,6 +41,19 @@ from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlati
 # soothsayer_utils (will be phased out)
 from soothsayer_utils import pv, flatten, assert_acceptable_arguments, is_symmetrical, is_graph, write_object, format_memory, format_header, format_path, is_nonstring_iterable, Suppress, dict_build, is_dict, is_dict_like, is_number, check_packages, is_query_class
 
+# ===============
+# Reading/Writing
+# ===============
+def read_parquet_nonredundant_pairwise_matrix(filepath: str, value_column_name="values") -> pd.Series:
+    data = pd.read_parquet(filepath)[value_column_name]
+    data.index = data.index.map(eval)
+    return data
+
+def write_parquet_nonredundant_pairwise_matrix(data: pd.Series, filepath: str, value_column_name="values"):
+    data = data.to_frame(value_column_name)
+    data.index = data.index.map(str)
+    data.to_parquet(filepath, index=True)
+    
 # ===================
 # Converting Networks
 # ===================  
