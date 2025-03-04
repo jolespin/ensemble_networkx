@@ -4,7 +4,7 @@ from __future__ import print_function, division
 # =======
 # Version
 # =======
-__version__= "2025.3.3"
+__version__= "2025.3.4"
 __author__ = "Josh L. Espinoza"
 __email__ = "jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -36,7 +36,7 @@ from sklearn.exceptions import ConvergenceWarning, UndefinedMetricWarning
 from joblib import Parallel, delayed
 
 # Compositional
-from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlation_with_basis_shrinkage
+from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlation_with_basis_shrinkage, check_compositional
 
 # soothsayer_utils (will be phased out)
 from soothsayer_utils import pv, flatten, assert_acceptable_arguments, is_symmetrical, is_graph, write_object, format_memory, format_header, format_path, is_nonstring_iterable, Suppress, dict_build, is_dict, is_dict_like, is_number, check_packages, is_query_class
@@ -1197,6 +1197,95 @@ def pairwise_mcc(X:pd.DataFrame, checks=True):
         output = pd.DataFrame(output, index=features, columns=features)
         
     return output
+
+def pairwise_log_ratio(X:pd.DataFrame, mask:pd.DataFrame=None):
+    """
+    Compute a dictionary of weighted directed graphs from a matrix of log-transformed counts.
+    
+    Parameters
+    ----------
+    X : pd.DataFrame
+        A matrix of shape (n_samples, n_components) where each row is a sample and each column is a component.
+    mask : pd.DataFrame, optional
+        A matrix of shape (n_samples, n_components) where each row is a sample and each column is a component with True/False values indicating whether to include the component in the graph
+        (e.g., mask = X == 0 before pseudo-count)
+        Default is None.
+    Returns
+    -------
+    graphs : dict
+        A dictionary where each key is a sample ID and the value is a weighted directed graph. The graph has two types of edges:
+        - Edges from node i to node j with weight = abs(log(x_i) - log(x_j)) and sign = sign(log(x_i) - log(x_j))
+        - Edges from node j to node i with weight = abs(log(x_j) - log(x_i)) and sign = sign(log(x_j) - log(x_i))
+    """
+    # Checks
+    n_dimensions = len(X.shape)
+    n, m = X.shape
+    check_compositional(X, n_dimensions)
+    samples = X.index
+    components = X.columns
+    graphs = dict()
+
+    if mask is None:
+        # Compute weighted directed graphs
+        for i, values in tqdm(enumerate(np.log(X.values)), desc="Computing weighted directed graphs from compositions [mask=None]", total=X.shape[0]):
+            id_sample = samples[i]
+            graph = nx.DiGraph(name=id_sample)
+            for j in range(m):
+                j_component = components[j]
+                j_value = values[j]
+                for k in range(j+1, m):
+                    k_component = components[k]
+                    k_value = values[k]
+                    # J - K
+                    j_minus_k = j_value - k_value
+                    j_minus_k_abs = abs(j_minus_k)
+                    if j_minus_k_abs > 0:
+                        graph.add_edge(j_component, k_component, weight=j_minus_k_abs, sign=np.sign(j_minus_k))
+
+                    # K - J
+                    k_minus_j = k_value - j_value
+                    k_minus_j_abs = abs(k_minus_j)
+                    if k_minus_j_abs > 0:
+                        graph.add_edge(k_component, j_component, weight=k_minus_j_abs, sign=np.sign(k_minus_j))
+            graphs[id_sample] = graph
+    else:
+        if isinstance(mask, pd.DataFrame):
+            if not np.all(mask.index == X.index):
+                raise ValueError(f"X ({X.index}) and mask ({mask.index}) must have the same index")
+            if not np.all(mask.columns == X.columns):
+                raise ValueError(f"X ({X.columns}) and mask ({mask.columns}) must have the same columns")
+            mask = mask.values
+        if not np.array_equal(X.shape, mask.shape):
+            raise ValueError(f"X ({X.shape}) and mask ({mask.shape}) must have the same shape")
+        
+        # Compute weighted directed graphs
+        for i, values in tqdm(enumerate(np.log(X.values)), desc="Computing weighted directed graphs from compositions [mask=True]", total=X.shape[0]):
+            id_sample = samples[i]
+            graph = nx.DiGraph(name=id_sample)
+            for j in range(m):
+                mask_j = mask[i, j]
+                if not mask_j:
+                    j_component = components[j]
+                    j_value = values[j]
+                    for k in range(j+1, m):
+                        mask_k = mask[i, k]
+                        if not mask_k:
+                            k_component = components[k]
+                            k_value = values[k]
+                            # J - K
+                            j_minus_k = j_value - k_value
+                            j_minus_k_abs = abs(j_minus_k)
+                            if j_minus_k_abs > 0:
+                                graph.add_edge(j_component, k_component, weight=j_minus_k_abs, sign=np.sign(j_minus_k))
+                            # K - J
+                            k_minus_j = k_value - j_value
+                            k_minus_j_abs = abs(k_minus_j)
+                            if k_minus_j_abs > 0:
+                                graph.add_edge(k_component, j_component, weight=k_minus_j_abs, sign=np.sign(k_minus_j))
+            graphs[id_sample] = graph
+        
+    return graphs
+        
 
 # =======================================================
 # Classes

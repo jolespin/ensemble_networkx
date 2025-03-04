@@ -1,0 +1,20 @@
+Metadata-Version: 2.1
+Name: ensemble_networkx
+Version: 2025.3.4
+Summary: Ensemble networks in Python
+Home-page: https://github.com/jolespin/ensemble_networkx
+Author: Josh L. Espinoza
+Author-email: jespinoz@jcvi.org
+License: BSD-3
+License-File: LICENSE
+Requires-Dist: pandas>=1
+Requires-Dist: numpy>=1.16
+Requires-Dist: scipy>=1
+Requires-Dist: networkx>=2
+Requires-Dist: igraph
+Requires-Dist: xarray>=0.15
+Requires-Dist: soothsayer_utils>=2022.6.24
+Requires-Dist: compositional>=2023.8.28
+Requires-Dist: scikit-learn>=1.0
+Requires-Dist: leidenalg
+Requires-Dist: joblib
