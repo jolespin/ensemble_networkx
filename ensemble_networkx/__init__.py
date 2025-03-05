@@ -4,7 +4,7 @@ from __future__ import print_function, division
 # =======
 # Version
 # =======
-__version__= "2025.3.4"
+__version__= "2025.3.4.post1"
 __author__ = "Josh L. Espinoza"
 __email__ = "jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -316,18 +316,58 @@ def convert_network(
             return graph
         
         if output_category == "igraph":
-            graph = into() 
-            # nodes = sorted(flatten(data.index.map(list), unique=True))
-            nodes = sorted(frozenset.union(*data.index))
-            graph.add_vertices(nodes)
-            for edge, w in data.items():
-                if len(edge) == 1:
-                    node_a = node_b = list(edge)[0]
-                else:
-                    node_a, node_b = list(edge)
-                graph.add_edge(node_a, node_b, weight=w)
+            # graph = into() 
+            # # nodes = sorted(flatten(data.index.map(list), unique=True))
+            # nodes = sorted(frozenset.union(*data.index))
+            # graph.add_vertices(nodes)
+            # for edge, w in data.items():
+            #     if len(edge) == 1:
+            #         node_a = node_b = list(edge)[0]
+            #     else:
+            #         node_a, node_b = list(edge)
+            #     graph.add_edge(node_a, node_b, weight=w)
+            if node_subgraph is not None:
+                warnings.warn("node_subgraph not supported for iGraph output")
+            
+            if edge_subgraph is not None:
+                warnings.warn("edge_subgraph not supported for iGraph output")
+                
+            # Extract unique nodes from the frozenset indexes
+            unique_nodes = set()
+            for nodeset in data.index:
+                unique_nodes.update(nodeset)
+            
+            # Create a mapping of nodes to integer vertex IDs
+            node_to_vertex = {node: vertex_id for vertex_id, node in enumerate(unique_nodes)}
+            
+            # Prepare edge list and weights
+            edges = []
+            weights = []
+            
+            for nodeset, value in data.items():
+                # Convert nodes to vertex IDs
+                vertex_pair = (
+                    node_to_vertex[list(nodeset)[0]], 
+                    node_to_vertex[list(nodeset)[1]],
+                    )
+                edges.append(vertex_pair)
+                weights.append(value)
+            
+            # Create iGraph
+            graph = into(
+                n=len(unique_nodes),
+                edges=edges,
+                directed=False
+            )
+            
+            # Add node names
+            graph.vs['name'] = list(unique_nodes)
+            
+            # Add edge weights
+            graph.es['weight'] = weights
             for k, v in _attrs.items():
                 graph[k] = v
+                
             return graph
         
         if output_category == "Symmetric":

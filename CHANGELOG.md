@@ -1,6 +1,7 @@
 
 #### Completed:
 
+* 2025.3.4 - Optimizing conversion between `pd.Series` and `igraph` in `convert_network`
 * 2025.3.4 - Added `pairwise_log_ratio` function to compute pairwise log ratios between components
 * 2025.3.3 - Added `read_parquet_nonredundant_pairwise_matrix` and `write_parquet_nonredundant_pairwise_matrix`
 * 2025.2.11 - Optimized `community_membership_cooccurrence` to use boolean and no broadcasting
