@@ -4,7 +4,7 @@ from __future__ import print_function, division
 # =======
 # Version
 # =======
-__version__= "2025.3.4.post1"
+__version__= "2025.7.8"
 __author__ = "Josh L. Espinoza"
 __email__ = "jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -336,19 +336,21 @@ def convert_network(
             unique_nodes = set()
             for nodeset in data.index:
                 unique_nodes.update(nodeset)
-            
+            unique_nodes = sorted(unique_nodes)
+
             # Create a mapping of nodes to integer vertex IDs
             node_to_vertex = {node: vertex_id for vertex_id, node in enumerate(unique_nodes)}
-            
+
             # Prepare edge list and weights
             edges = []
             weights = []
-            
+
             for nodeset, value in data.items():
                 # Convert nodes to vertex IDs
+                node_a, node_b = list(nodeset)
                 vertex_pair = (
-                    node_to_vertex[list(nodeset)[0]], 
-                    node_to_vertex[list(nodeset)[1]],
+                    node_to_vertex[node_a], 
+                    node_to_vertex[node_b],
                     )
                 edges.append(vertex_pair)
                 weights.append(value)
@@ -361,10 +363,12 @@ def convert_network(
             )
             
             # Add node names
-            graph.vs['name'] = list(unique_nodes)
+            graph.vs['name'] = unique_nodes
             
             # Add edge weights
             graph.es['weight'] = weights
+            
+            # Add attributes
             for k, v in _attrs.items():
                 graph[k] = v
                 
@@ -2122,7 +2126,7 @@ class ClusteredNetwork(object):
         self.number_of_edges_initial_ = len(self.edges_initial_)
 
         self.communities_ = community_detection(self.graph_initial_, n_iter=n_iter, algorithm=algorithm, weight=weight, algo_kws=algo_kws)
-        self.cooccurrence_rates_ = edge_cluster_cooccurrence(self.communities_).mean(axis=1)
+        self.cooccurrence_rates_ = community_membership_cooccurrence(self.communities_).mean(axis=1)
 
         edges_after_commmunity_detection = set(self.cooccurrence_rates_[lambda h: h >= self.minimum_cooccurrence_rate].index) & set(self.edges_initial_)
         self.graph_clustered_ = nx.edge_subgraph(self.graph_initial_, list(map(tuple, edges_after_commmunity_detection)))
