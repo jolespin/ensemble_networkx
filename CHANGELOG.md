@@ -1,6 +1,12 @@
 
 #### Completed:
-
+* 2026.1.12 - Removed `umap_fuzzy_simplical_set_graph`
+* 2026.1.12 - `ClusteredNetwork` and `BiDirectionalClusteredNetwork` wrap `skclust.graph.ConsensusLeidenClustering` which properly implements multi-threaded behavior
+* 2026.1.12 - Moved `n_jobs` from `.fit` to `__init__` in `ClusteredNetwork` and `BiDirectionalClusteredNetwork`
+* 2026.1.12 - Removed `cluster_membership_cooccurrence` and replaced with `skclust.graph.cluster_membership_cooccurrence`
+* 2026.1.12 - Removed `community_detection` and replaced with `skclust.graph.ConsensusLeidenClustering` 
+* 2026.1.12 - Added `skclust>=2026.1.9` dependency
+* 2026.1.12 - Removed `joblib` dependency
 * 2025.7.8 - Fixed `edge_cluster_cooccurrence` error in `BiDirectionalClusteredNetwork`
 * 2025.3.4 - Optimizing conversion between `pd.Series` and `igraph` in `convert_network`
 * 2025.3.4 - Added `pairwise_log_ratio` function to compute pairwise log ratios between components
