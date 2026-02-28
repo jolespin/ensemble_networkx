@@ -474,6 +474,8 @@ We are going to run Leiden community detection but since it is stochastic and no
 
 Josh L Espinoza, Manolito Torralba, Pamela Leong, Richard Saffery, Michelle Bockmann, Claire Kuelbs, Suren Singh, Toby Hughes, Jeffrey M Craig, Karen E Nelson, Chris L Dupont, Differential network analysis of oral microbiome metatranscriptomes identifies community scale metabolic restructuring in dental caries, PNAS Nexus, Volume 1, Issue 5, November 2022, pgac239, https://doi.org/10.1093/pnasnexus/pgac239
 
+**Note:**
+`skclust==2026.1.12` does NOT delete singletons and `skclust>2026.2.26` DOES delete singletons AND nodes from clusters that do not have enough nodes specified by the new parameter `minimum_cluster_size`
 
 ```python
 # Get graph
