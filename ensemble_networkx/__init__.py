@@ -4,7 +4,7 @@ from __future__ import print_function, division
 # =======
 # Version
 # =======
-__version__= "2026.1.12"
+__version__= "2026.6.17"
 __author__ = "Josh L. Espinoza"
 __email__ = "jol.espinoz@gmail.com"
 __url__ = "https://github.com/jolespin/ensemble_networkx"
@@ -40,7 +40,7 @@ from compositional import pairwise_rho, pairwise_phi, pairwise_partial_correlati
 # soothsayer_utils (will be phased out)
 from soothsayer_utils import pv, flatten, assert_acceptable_arguments, is_symmetrical, is_graph, write_object, format_memory, format_header, format_path, is_nonstring_iterable, Suppress, dict_build, is_dict, is_dict_like, is_number, check_packages, is_query_class
 
-from skclust.graph import ConsensusLeidenClustering, cluster_membership_cooccurrence
+from skclust.graph import ConsensusLeidenClustering
 
 # ===============
 # Reading/Writing

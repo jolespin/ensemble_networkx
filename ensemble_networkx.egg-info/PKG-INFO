@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: ensemble_networkx
-Version: 2026.1.12
+Version: 2026.6.17
 Summary: Ensemble networks in Python
 Home-page: https://github.com/jolespin/ensemble_networkx
 Author: Josh L. Espinoza
@@ -17,7 +17,7 @@ Requires-Dist: soothsayer_utils>=2022.6.24
 Requires-Dist: compositional>=2023.8.28
 Requires-Dist: scikit-learn>=1.0
 Requires-Dist: leidenalg
-Requires-Dist: skclust>=2026.1.9
+Requires-Dist: skclust>=2026.6.17
 Dynamic: author
 Dynamic: author-email
 Dynamic: home-page
